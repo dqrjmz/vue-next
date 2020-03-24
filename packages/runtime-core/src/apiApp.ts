@@ -56,7 +56,7 @@ export type Plugin =
   | {
       install: PluginInstallFunction
     }
-
+// 创建Vue实例
 export function createAppContext(): AppContext {
   return {
     config: {
@@ -79,6 +79,7 @@ export function createAppAPI<HostNode, HostElement>(
 ): () => App<HostElement> {
   return function createApp(): App {
     const context = createAppContext()
+    // 值的集合不重复
     const installedPlugins = new Set()
 
     let isMounted = false
@@ -160,6 +161,7 @@ export function createAppAPI<HostNode, HostElement>(
         return app
       },
 
+      // 安装组件，根组件，根容器
       mount(
         rootComponent: Component,
         rootContainer: HostElement,
@@ -171,10 +173,12 @@ export function createAppAPI<HostNode, HostElement>(
               warn(`root props passed to app.mount() must be an object.`)
             rootProps = null
           }
+          // 创建虚拟dom ，根组件实例，根属性
           const vnode = createVNode(rootComponent, rootProps)
           // store app context on the root VNode.
           // this will be set on the root instance on initial mount.
           vnode.appContext = context
+          // 虚拟dom渲染到页面
           render(vnode, rootContainer)
           isMounted = true
           return vnode.component!.renderProxy

@@ -38,7 +38,7 @@ function queueFlush() {
   }
 }
 
-const dedupe = (cbs: Function[]): Function[] => [...new Set(cbs)]
+const dedupe = (cbs: Function[]): Function[] => [...new Set(cbs)] // 过滤重复数据
 
 export function flushPostFlushCbs(seen?: CountMap) {
   if (postFlushCbs.length) {
@@ -83,6 +83,7 @@ function checkRecursiveUpdates(seen: CountMap, fn: Function) {
     seen.set(fn, 1)
   } else {
     const count = seen.get(fn)!
+    // 调用栈大于100 爆栈
     if (count > RECURSION_LIMIT) {
       throw new Error(
         'Maximum recursive updates exceeded. ' +

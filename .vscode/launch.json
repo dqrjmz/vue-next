@@ -5,6 +5,23 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "build",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/build.js",
+      "stopOnEntry": false,
+      "args": ["runtime-core"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": null,
+      "runtimeExecutable": null,
+      "runtimeArgs": ["--nolazy"],
+      "env": {
+        "NODE_ENV": "development"
+      },
+      "console": "integratedTerminal",
+      "sourceMaps": true
+    },
+    {
       "name": "Jest",
       "type": "node",
       "request": "launch",

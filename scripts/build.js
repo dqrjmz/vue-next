@@ -32,10 +32,19 @@ const buildAllMatching = args.all || args.a
 const lean = args.lean || args.l
 const commit = execa.sync('git', ['rev-parse', 'HEAD']).stdout.slice(0, 7)
 
+Object.defineProperty(targets, 'isNativeTag', {
+  value: tag => console.log(tag),
+  writable: false
+})
+targets.isNativeTag = 'dfdf'
+console.log(targets.isNativeTag('abcd'))
+
 run()
 
 async function run() {
+  // 没有指定文件夹
   if (!targets.length) {
+    // 全部构建
     await buildAll(allTargets)
     checkAllSizes(allTargets)
   } else {
@@ -62,6 +71,7 @@ async function build(target) {
   const env =
     (pkg.buildOptions && pkg.buildOptions.env) ||
     (devOnly ? 'development' : 'production')
+  // 执行命令
   await execa(
     'rollup',
     [

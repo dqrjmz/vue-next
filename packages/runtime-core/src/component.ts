@@ -133,6 +133,7 @@ export interface ComponentInternalInstance {
 
 const emptyAppContext = createAppContext()
 
+// 创建组件实例
 export function createComponentInstance(
   vnode: VNode,
   parent: ComponentInternalInstance | null
@@ -144,7 +145,7 @@ export function createComponentInstance(
     vnode,
     parent,
     appContext,
-    type: vnode.type as Component,
+    type: vnode.type as Component, //虚拟节点类型
     root: null!, // set later so it can point to itself
     next: null,
     subTree: null!, // will be set synchronously right after creation
@@ -243,7 +244,7 @@ export function setupStatefulComponent(
   instance: ComponentInternalInstance,
   parentSuspense: SuspenseBoundary | null
 ) {
-  const Component = instance.type as ComponentOptions
+  const Component = instance.type as ComponentOptions //组件实例
 
   if (__DEV__) {
     if (Component.name) {

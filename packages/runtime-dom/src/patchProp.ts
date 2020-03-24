@@ -10,6 +10,18 @@ import {
   VNode
 } from '@vue/runtime-core'
 
+/**
+ * 补丁参数
+ * @param el
+ * @param key
+ * @param nextValue
+ * @param prevValue
+ * @param isSVG
+ * @param prevChildren
+ * @param parentComponent
+ * @param parentSuspense
+ * @param unmountChildren
+ */
 export function patchProp(
   el: Element,
   key: string,

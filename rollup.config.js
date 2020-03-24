@@ -11,7 +11,7 @@ if (!process.env.TARGET) {
 }
 
 const packagesDir = path.resolve(__dirname, 'packages')
-const packageDir = path.resolve(packagesDir, process.env.TARGET)
+const packageDir = path.resolve(packagesDir, process.env.TARGET) // 编译目标
 const name = path.basename(packageDir)
 const resolve = p => path.resolve(packageDir, p)
 const pkg = require(resolve(`package.json`))
@@ -23,6 +23,7 @@ fs.readdirSync(packagesDir).forEach(dir => {
   if (dir === 'vue') {
     return
   }
+  // 设置目录别名
   if (fs.statSync(path.resolve(packagesDir, dir)).isDirectory()) {
     aliasOptions[`@vue/${dir}`] = path.resolve(packagesDir, `${dir}/src/index`)
   }
@@ -51,6 +52,7 @@ const configs = {
   }
 }
 
+// 打包模块化格式
 const defaultFormats = ['esm', 'cjs']
 const inlineFormats = process.env.FORMATS && process.env.FORMATS.split(',')
 const packageFormats = inlineFormats || packageOptions.formats || defaultFormats
@@ -71,6 +73,7 @@ if (process.env.NODE_ENV === 'production') {
 
 export default packageConfigs
 
+// esm cjs
 function createConfig(output, plugins = []) {
   output.externalLiveBindings = false
 

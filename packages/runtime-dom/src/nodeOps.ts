@@ -1,6 +1,10 @@
 const doc = document
 const svgNS = 'http://www.w3.org/2000/svg'
 
+/**
+ * 节点参数
+ * 操作节点的方法，元素，文本，注释
+ */
 export const nodeOps = {
   insert: (child: Node, parent: Node, anchor?: Node) => {
     if (anchor != null) {

@@ -189,7 +189,7 @@ export function isSameVNodeType(n1: VNode, n2: VNode): boolean {
 }
 
 export function createVNode(
-  type: VNodeTypes,
+  type: VNodeTypes, // 组件实例
   props: (Data & VNodeProps) | null = null,
   children: unknown = null,
   patchFlag: number = 0,

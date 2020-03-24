@@ -117,7 +117,7 @@ export function processExpression(
 
   // walk the AST and look for identifiers that need to be prefixed with `_ctx.`.
   walkJS(ast, {
-    enter(node: Node & PrefixMeta, parent) {
+    enter(node: Node & PrefixMeta | any, parent: any) {
       if (node.type === 'Identifier') {
         if (!ids.includes(node)) {
           const needPrefix = shouldPrefix(node, parent)
