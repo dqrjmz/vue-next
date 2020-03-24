@@ -1,5 +1,5 @@
 <script src="../../dist/vue.global.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/todomvc-app-css/index.css">
+<link rel="stylesheet" href="../../../../node_modules/todomvc-app-css/index.css">
 
 <div id="app">
   <section class="todoapp">
@@ -82,14 +82,14 @@ const filters = {
   }
 }
 
-const App = {
+Vue.createApp({
   // app initial state
-  data: {
+  data: () => ({
     todos: todoStorage.fetch(),
     newTodo: '',
     editedTodo: null,
     visibility: 'all'
-  },
+  }),
 
   // watch todos change for localStorage persistence
   watch: {
@@ -192,7 +192,5 @@ const App = {
       }
     }
   }
-}
-
-Vue.createApp().mount(App, '#app')
+}).mount('#app')
 </script>

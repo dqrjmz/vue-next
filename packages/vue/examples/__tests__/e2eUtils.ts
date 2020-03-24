@@ -1,5 +1,7 @@
 import puppeteer from 'puppeteer'
 
+export const E2E_TIMEOUT = 30 * 1000
+
 const puppeteerOptions = process.env.CI
   ? { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
   : {}
@@ -11,6 +13,16 @@ export function setupPuppeteer() {
   beforeEach(async () => {
     browser = await puppeteer.launch(puppeteerOptions)
     page = await browser.newPage()
+
+    page.on('console', e => {
+      if (e.type() === 'error') {
+        const err = e.args()[0] as any
+        console.error(
+          `Error from Puppeteer-loaded page:\n`,
+          err._remoteObject.description
+        )
+      }
+    })
   })
 
   afterEach(async () => {
@@ -30,7 +42,11 @@ export function setupPuppeteer() {
   }
 
   async function value(selector: string) {
-    return await page.$eval(selector, (node: any) => node.value)
+    return await page.$eval(selector, node => (node as HTMLInputElement).value)
+  }
+
+  async function html(selector: string) {
+    return await page.$eval(selector, node => node.innerHTML)
   }
 
   async function classList(selector: string) {
@@ -42,29 +58,41 @@ export function setupPuppeteer() {
   }
 
   async function isVisible(selector: string) {
-    const display = await page.$eval(selector, (node: HTMLElement) => {
+    const display = await page.$eval(selector, node => {
       return window.getComputedStyle(node).display
     })
     return display !== 'none'
   }
 
   async function isChecked(selector: string) {
-    return await page.$eval(selector, (node: any) => node.checked)
+    return await page.$eval(
+      selector,
+      node => (node as HTMLInputElement).checked
+    )
   }
 
   async function isFocused(selector: string) {
     return await page.$eval(selector, node => node === document.activeElement)
   }
 
+  async function setValue(selector: string, value: string) {
+    const el = (await page.$(selector))!
+    await el.evaluate(node => ((node as HTMLInputElement).value = ''))
+    await el.type(value)
+  }
+
   async function enterValue(selector: string, value: string) {
     const el = (await page.$(selector))!
-    await el.evaluate((node: any) => (node.value = ''))
+    await el.evaluate(node => ((node as HTMLInputElement).value = ''))
     await el.type(value)
     await el.press('Enter')
   }
 
   async function clearValue(selector: string) {
-    return await page.$eval(selector, (node: any) => (node.value = ''))
+    return await page.$eval(
+      selector,
+      node => ((node as HTMLInputElement).value = '')
+    )
   }
 
   return {
@@ -73,11 +101,13 @@ export function setupPuppeteer() {
     count,
     text,
     value,
+    html,
     classList,
     children,
     isVisible,
     isChecked,
     isFocused,
+    setValue,
     enterValue,
     clearValue
   }

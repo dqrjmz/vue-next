@@ -4,35 +4,19 @@ import { patchAttr } from './modules/attrs'
 import { patchDOMProp } from './modules/props'
 import { patchEvent } from './modules/events'
 import { isOn } from '@vue/shared'
-import {
-  ComponentInternalInstance,
-  SuspenseBoundary,
-  VNode
-} from '@vue/runtime-core'
+import { RendererOptions } from '@vue/runtime-core'
 
-/**
- * 补丁参数
- * @param el
- * @param key
- * @param nextValue
- * @param prevValue
- * @param isSVG
- * @param prevChildren
- * @param parentComponent
- * @param parentSuspense
- * @param unmountChildren
- */
-export function patchProp(
-  el: Element,
-  key: string,
-  nextValue: any,
-  prevValue: any,
-  isSVG: boolean,
-  prevChildren?: VNode[],
-  parentComponent?: ComponentInternalInstance,
-  parentSuspense?: SuspenseBoundary<Node, Element>,
-  unmountChildren?: any
-) {
+export const patchProp: RendererOptions<Node, Element>['patchProp'] = (
+  el,
+  key,
+  prevValue,
+  nextValue,
+  isSVG = false,
+  prevChildren,
+  parentComponent,
+  parentSuspense,
+  unmountChildren
+) => {
   switch (key) {
     // special
     case 'class':
@@ -41,19 +25,18 @@ export function patchProp(
     case 'style':
       patchStyle(el, prevValue, nextValue)
       break
-    case 'modelValue':
-    case 'onUpdate:modelValue':
-      // Do nothing. This is handled by v-model directives.
-      break
     default:
       if (isOn(key)) {
-        patchEvent(
-          el,
-          key.slice(2).toLowerCase(),
-          prevValue,
-          nextValue,
-          parentComponent
-        )
+        // ignore v-model listeners
+        if (key.indexOf('onUpdate:') < 0) {
+          patchEvent(
+            el,
+            key.slice(2).toLowerCase(),
+            prevValue,
+            nextValue,
+            parentComponent
+          )
+        }
       } else if (!isSVG && key in el) {
         patchDOMProp(
           el,
@@ -74,7 +57,7 @@ export function patchProp(
         } else if (key === 'false-value') {
           ;(el as any)._falseValue = nextValue
         }
-        patchAttr(el, key, nextValue)
+        patchAttr(el, key, nextValue, isSVG)
       }
       break
   }

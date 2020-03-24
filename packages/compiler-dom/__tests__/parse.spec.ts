@@ -1,5 +1,5 @@
 import {
-  parse,
+  baseParse as parse,
   NodeTypes,
   ElementNode,
   TextNode,
@@ -47,6 +47,22 @@ describe('DOM parser', () => {
           source: '&amp;'
         }
       })
+    })
+
+    test('textarea support interpolation', () => {
+      const ast = parse('<textarea><div>{{ foo }}</textarea>', parserOptions)
+      const element = ast.children[0] as ElementNode
+      expect(element.children).toMatchObject([
+        { type: NodeTypes.TEXT, content: `<div>` },
+        {
+          type: NodeTypes.INTERPOLATION,
+          content: {
+            type: NodeTypes.SIMPLE_EXPRESSION,
+            content: `foo`,
+            isStatic: false
+          }
+        }
+      ])
     })
 
     test('style handles comments/elements as just a text', () => {

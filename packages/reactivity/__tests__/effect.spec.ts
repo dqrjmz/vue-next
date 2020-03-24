@@ -6,7 +6,8 @@ import {
   TrackOpTypes,
   TriggerOpTypes,
   DebuggerEvent,
-  markNonReactive
+  markNonReactive,
+  ref
 } from '../src/index'
 import { ITERATE_KEY } from '../src/effect'
 
@@ -734,5 +735,39 @@ describe('reactivity/effect', () => {
     effect(fnSpy)
     obj.foo = NaN
     expect(fnSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('should trigger all effects when array lenght is set 0', () => {
+    const observed: any = reactive([1])
+    let dummy, record
+    effect(() => {
+      dummy = observed.length
+    })
+    effect(() => {
+      record = observed[0]
+    })
+    expect(dummy).toBe(1)
+    expect(record).toBe(1)
+
+    observed[1] = 2
+    expect(observed[1]).toBe(2)
+
+    observed.unshift(3)
+    expect(dummy).toBe(3)
+    expect(record).toBe(3)
+
+    observed.length = 0
+    expect(dummy).toBe(0)
+    expect(record).toBeUndefined()
+  })
+
+  it('should handle self dependency mutations', () => {
+    const count = ref(0)
+    effect(() => {
+      count.value++
+    })
+    expect(count.value).toBe(1)
+    count.value = 10
+    expect(count.value).toBe(11)
   })
 })

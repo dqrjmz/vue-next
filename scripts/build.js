@@ -27,7 +27,9 @@ const targets = args._
 const formats = args.formats || args.f
 const devOnly = args.devOnly || args.d
 const prodOnly = !devOnly && (args.prodOnly || args.p)
-const buildTypes = args.t || args.types
+const sourceMap = args.sourcemap || args.s
+const isRelease = args.release
+const buildTypes = args.t || args.types || isRelease
 const buildAllMatching = args.all || args.a
 const lean = args.lean || args.l
 const commit = execa.sync('git', ['rev-parse', 'HEAD']).stdout.slice(0, 7)
@@ -63,6 +65,11 @@ async function build(target) {
   const pkgDir = path.resolve(`packages/${target}`)
   const pkg = require(`${pkgDir}/package.json`)
 
+  // only build published packages for release
+  if (isRelease && pkg.private) {
+    return
+  }
+
   // if building a specific format, do not remove dist.
   if (!formats) {
     await fs.remove(`${pkgDir}/dist`)
@@ -84,7 +91,8 @@ async function build(target) {
         formats ? `FORMATS:${formats}` : ``,
         buildTypes ? `TYPES:true` : ``,
         prodOnly ? `PROD_ONLY:true` : ``,
-        lean ? `LEAN:true` : ``
+        lean ? `LEAN:true` : ``,
+        sourceMap ? `SOURCE_MAP:true` : ``
       ]
         .filter(Boolean)
         .join(',')
@@ -150,18 +158,23 @@ function checkAllSizes(targets) {
 
 function checkSize(target) {
   const pkgDir = path.resolve(`packages/${target}`)
-  const esmProdBuild = `${pkgDir}/dist/${target}.global.prod.js`
-  if (fs.existsSync(esmProdBuild)) {
-    const file = fs.readFileSync(esmProdBuild)
-    const minSize = (file.length / 1024).toFixed(2) + 'kb'
-    const gzipped = gzipSync(file)
-    const gzippedSize = (gzipped.length / 1024).toFixed(2) + 'kb'
-    const compressed = compress(file)
-    const compressedSize = (compressed.length / 1024).toFixed(2) + 'kb'
-    console.log(
-      `${chalk.gray(
-        chalk.bold(target)
-      )} min:${minSize} / gzip:${gzippedSize} / brotli:${compressedSize}`
-    )
+  checkFileSize(`${pkgDir}/dist/${target}.global.prod.js`)
+  checkFileSize(`${pkgDir}/dist/${target}.runtime.global.prod.js`)
+}
+
+function checkFileSize(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return
   }
+  const file = fs.readFileSync(filePath)
+  const minSize = (file.length / 1024).toFixed(2) + 'kb'
+  const gzipped = gzipSync(file)
+  const gzippedSize = (gzipped.length / 1024).toFixed(2) + 'kb'
+  const compressed = compress(file)
+  const compressedSize = (compressed.length / 1024).toFixed(2) + 'kb'
+  console.log(
+    `${chalk.gray(
+      chalk.bold(path.basename(filePath))
+    )} min:${minSize} / gzip:${gzippedSize} / brotli:${compressedSize}`
+  )
 }

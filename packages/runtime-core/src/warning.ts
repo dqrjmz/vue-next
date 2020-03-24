@@ -1,7 +1,7 @@
 import { VNode } from './vnode'
 import { Data, ComponentInternalInstance, Component } from './component'
 import { isString, isFunction } from '@vue/shared'
-import { toRaw, isRef, pauseTracking, resumeTracking } from '@vue/reactivity'
+import { toRaw, isRef, pauseTracking, resetTracking } from '@vue/reactivity'
 import { callWithErrorHandling, ErrorCodes } from './errorHandling'
 
 type ComponentVNode = VNode & {
@@ -41,7 +41,7 @@ export function warn(msg: string, ...args: any[]) {
       ErrorCodes.APP_WARN_HANDLER,
       [
         msg + args.join(''),
-        instance && instance.renderProxy,
+        instance && instance.proxy,
         trace
           .map(({ vnode }) => `at <${formatComponentName(vnode)}>`)
           .join('\n'),
@@ -60,7 +60,7 @@ export function warn(msg: string, ...args: any[]) {
     console.warn(...warnArgs)
   }
 
-  resumeTracking()
+  resetTracking()
 }
 
 function getComponentTrace(): ComponentTraceStack {

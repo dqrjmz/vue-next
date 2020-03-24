@@ -1,4 +1,4 @@
-// TSX w/ createComponent is tested in createComponent.test-d.tsx
+// TSX w/ defineComponent is tested in defineComponent.test-d.tsx
 
 import { expectError, expectType } from 'tsd'
 import { KeepAlive, Suspense, Fragment, Portal } from '@vue/runtime-dom'
@@ -28,14 +28,17 @@ expectType<JSX.Element>(<Fragment />)
 expectType<JSX.Element>(<Fragment key="1" />)
 
 expectType<JSX.Element>(<Portal target="#foo" />)
-// target is required
+expectType<JSX.Element>(<Portal target="#foo" key="1" />)
 expectError(<Portal />)
+expectError(<Portal target={1} />)
 
 // KeepAlive
 expectType<JSX.Element>(<KeepAlive include="foo" exclude={['a']} />)
+expectType<JSX.Element>(<KeepAlive key="1" />)
 expectError(<KeepAlive include={123} />)
 
 // Suspense
 expectType<JSX.Element>(<Suspense />)
+expectType<JSX.Element>(<Suspense key="1" />)
 expectType<JSX.Element>(<Suspense onResolve={() => {}} onRecede={() => {}} />)
 expectError(<Suspense onResolve={123} />)

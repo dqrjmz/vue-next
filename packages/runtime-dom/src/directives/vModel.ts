@@ -1,20 +1,21 @@
 import {
   ObjectDirective,
   VNode,
+  DirectiveHook,
   DirectiveBinding,
   warn
 } from '@vue/runtime-core'
 import { addEventListener } from '../modules/events'
-import { isArray, isObject } from '@vue/shared'
+import { isArray, looseEqual, looseIndexOf } from '@vue/shared'
 
 const getModelAssigner = (vnode: VNode): ((value: any) => void) =>
   vnode.props!['onUpdate:modelValue']
 
-function onCompositionStart(e: CompositionEvent) {
+function onCompositionStart(e: Event) {
   ;(e.target as any).composing = true
 }
 
-function onCompositionEnd(e: CompositionEvent) {
+function onCompositionEnd(e: Event) {
   const target = e.target as any
   if (target.composing) {
     target.composing = false
@@ -182,47 +183,6 @@ function setSelected(el: HTMLSelectElement, value: any) {
   }
 }
 
-function looseEqual(a: any, b: any): boolean {
-  if (a === b) return true
-  const isObjectA = isObject(a)
-  const isObjectB = isObject(b)
-  if (isObjectA && isObjectB) {
-    try {
-      const isArrayA = isArray(a)
-      const isArrayB = isArray(b)
-      if (isArrayA && isArrayB) {
-        return (
-          a.length === b.length &&
-          a.every((e: any, i: any) => looseEqual(e, b[i]))
-        )
-      } else if (a instanceof Date && b instanceof Date) {
-        return a.getTime() === b.getTime()
-      } else if (!isArrayA && !isArrayB) {
-        const keysA = Object.keys(a)
-        const keysB = Object.keys(b)
-        return (
-          keysA.length === keysB.length &&
-          keysA.every(key => looseEqual(a[key], b[key]))
-        )
-      } else {
-        /* istanbul ignore next */
-        return false
-      }
-    } catch (e) {
-      /* istanbul ignore next */
-      return false
-    }
-  } else if (!isObjectA && !isObjectB) {
-    return String(a) === String(b)
-  } else {
-    return false
-  }
-}
-
-function looseIndexOf(arr: any[], val: any): number {
-  return arr.findIndex(item => looseEqual(item, val))
-}
-
 // retrieve raw value set via :value bindings
 function getValue(el: HTMLOptionElement | HTMLInputElement) {
   return '_value' in el ? (el as any)._value : el.value
@@ -259,7 +219,7 @@ function callModelHook(
   binding: DirectiveBinding,
   vnode: VNode,
   prevVNode: VNode | null,
-  hook: keyof ObjectDirective
+  hook: 'beforeMount' | 'mounted' | 'beforeUpdate' | 'updated'
 ) {
   let modelToUse: ObjectDirective
   switch (el.tagName) {
@@ -281,6 +241,27 @@ function callModelHook(
           modelToUse = vModelText
       }
   }
-  const fn = modelToUse[hook]
+  const fn = modelToUse[hook] as DirectiveHook
   fn && fn(el, binding, vnode, prevVNode)
+}
+
+// SSR vnode transforms
+if (__NODE_JS__) {
+  vModelText.getSSRProps = ({ value }) => ({ value })
+
+  vModelRadio.getSSRProps = ({ value }, vnode) => {
+    if (vnode.props && looseEqual(vnode.props.value, value)) {
+      return { checked: true }
+    }
+  }
+
+  vModelCheckbox.getSSRProps = ({ value }, vnode) => {
+    if (isArray(value)) {
+      if (vnode.props && looseIndexOf(value, vnode.props.value) > -1) {
+        return { checked: true }
+      }
+    } else if (value) {
+      return { checked: true }
+    }
+  }
 }
