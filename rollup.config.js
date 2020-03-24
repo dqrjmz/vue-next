@@ -3,21 +3,28 @@ import ts from 'rollup-plugin-typescript2'
 import replace from '@rollup/plugin-replace'
 import json from '@rollup/plugin-json'
 
+// node进程环境必须有目标参数
 if (!process.env.TARGET) {
   throw new Error('TARGET package must be specified via --environment flag.')
 }
 
+// 获取当前vue版本
 const masterVersion = require('./package.json').version
+// 拼接package文件夹路径
 const packagesDir = path.resolve(__dirname, 'packages')
+// 根据编译目标拼接输出文件夹路径
 const packageDir = path.resolve(packagesDir, process.env.TARGET) // 编译目标
+// 获取最后的文件名
 const name = path.basename(packageDir)
 const resolve = p => path.resolve(packageDir, p)
 const pkg = require(resolve(`package.json`))
+// 每个package下的构建配置
 const packageOptions = pkg.buildOptions || {}
 
 // ensure TS checks only once for each build
 let hasTSChecked = false
 
+// 输出文件配置
 const outputConfigs = {
   'esm-bundler': {
     file: resolve(`dist/${name}.esm-bundler.js`),

@@ -18,7 +18,9 @@ __DEV__=false yarn dev
 
 const execa = require('execa')
 const { fuzzyMatchTarget } = require('./utils')
+// 获取启动进程参数
 const args = require('minimist')(process.argv.slice(2))
+// 
 const target = args._.length ? fuzzyMatchTarget(args._)[0] : 'vue'
 const formats = args.formats || args.f
 const sourceMap = args.sourcemap || args.s
