@@ -8,23 +8,17 @@ import {
   VNodeHook
 } from './vnode'
 import { flushPostFlushCbs } from './scheduler'
-import { ComponentInternalInstance } from './component'
+import { ComponentOptions, ComponentInternalInstance } from './component'
 import { invokeDirectiveHook } from './directives'
 import { warn } from './warning'
-import {
-  PatchFlags,
-  ShapeFlags,
-  isReservedProp,
-  isOn,
-  isString
-} from '@vue/shared'
+import { PatchFlags, ShapeFlags, isReservedProp, isOn } from '@vue/shared'
 import { RendererInternals, invokeVNodeHook } from './renderer'
 import {
   SuspenseImpl,
   SuspenseBoundary,
   queueEffectWithSuspense
 } from './components/Suspense'
-import { ComponentOptions } from './apiOptions'
+import { TeleportImpl } from './components/Teleport'
 
 export type RootHydrateFunction = (
   vnode: VNode<Node, Element>,
@@ -162,7 +156,8 @@ export function createHydrationFunctions(
               null,
               parentComponent,
               parentSuspense,
-              isSVGContainer(container)
+              isSVGContainer(container),
+              optimized
             )
           }
           // async component
@@ -178,12 +173,19 @@ export function createHydrationFunctions(
           return isFragmentStart
             ? locateClosingAsyncAnchor(node)
             : nextSibling(node)
-        } else if (shapeFlag & ShapeFlags.PORTAL) {
+        } else if (shapeFlag & ShapeFlags.TELEPORT) {
           if (domType !== DOMNodeTypes.COMMENT) {
             return onMismatch()
           }
-          hydratePortal(vnode, parentComponent, parentSuspense, optimized)
-          return nextSibling(node)
+          return (vnode.type as typeof TeleportImpl).hydrate(
+            node,
+            vnode,
+            parentComponent,
+            parentSuspense,
+            optimized,
+            rendererInternals,
+            hydrateChildren
+          )
         } else if (__FEATURE_SUSPENSE__ && shapeFlag & ShapeFlags.SUSPENSE) {
           return (vnode.type as typeof SuspenseImpl).hydrate(
             node,
@@ -363,33 +365,6 @@ export function createHydrationFunctions(
       // since the anchor is missing, we need to create one and insert it
       insert((vnode.anchor = createComment(`]`)), container, next)
       return next
-    }
-  }
-
-  const hydratePortal = (
-    vnode: VNode,
-    parentComponent: ComponentInternalInstance | null,
-    parentSuspense: SuspenseBoundary | null,
-    optimized: boolean
-  ) => {
-    const targetSelector = vnode.props && vnode.props.target
-    const target = (vnode.target = isString(targetSelector)
-      ? document.querySelector(targetSelector)
-      : targetSelector)
-    if (target && vnode.shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
-      hydrateChildren(
-        target.firstChild,
-        vnode,
-        target,
-        parentComponent,
-        parentSuspense,
-        optimized
-      )
-    } else if (__DEV__) {
-      warn(
-        `Attempting to hydrate portal but target ${targetSelector} does not ` +
-          `exist in server-rendered markup.`
-      )
     }
   }
 

@@ -4,7 +4,7 @@ import {
   validateComponentName,
   PublicAPIComponent
 } from './component'
-import { ComponentOptions } from './apiOptions'
+import { ComponentOptions } from './componentOptions'
 import { ComponentPublicInstance } from './componentProxy'
 import { Directive, validateDirectiveName } from './directives'
 import { RootRenderFunction } from './renderer'
@@ -36,11 +36,22 @@ export interface App<HostElement = any> {
   _context: AppContext
 }
 
+export type OptionMergeFunction = (
+  to: unknown,
+  from: unknown,
+  instance: any,
+  key: string
+) => any
+
 export interface AppConfig {
+  // @private
+  readonly isNativeTag?: (tag: string) => boolean
+
   devtools: boolean
   performance: boolean
-  readonly isNativeTag?: (tag: string) => boolean
-  isCustomElement?: (tag: string) => boolean
+  optionMergeStrategies: Record<string, OptionMergeFunction>
+  globalProperties: Record<string, any>
+  isCustomElement: (tag: string) => boolean
   errorHandler?: (
     err: unknown,
     instance: ComponentPublicInstance | null,
@@ -73,9 +84,11 @@ export type Plugin =
 export function createAppContext(): AppContext {
   return {
     config: {
+      isNativeTag: NO,
       devtools: true,
       performance: false,
-      isNativeTag: NO,
+      globalProperties: {},
+      optionMergeStrategies: {},
       isCustomElement: NO,
       errorHandler: undefined,
       warnHandler: undefined
@@ -197,7 +210,7 @@ export function createAppAPI<HostElement>(
           vnode.appContext = context
 
           // HMR root reload
-          if (__BUNDLER__ && __DEV__) {
+          if (__DEV__) {
             context.reload = () => {
               render(cloneVNode(vnode), rootContainer)
             }

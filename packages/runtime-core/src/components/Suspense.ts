@@ -419,7 +419,7 @@ function createSuspenseBoundary(
           if (__DEV__) {
             pushWarningContext(vnode)
           }
-          handleSetupResult(instance, asyncSetupResult, suspense, false)
+          handleSetupResult(instance, asyncSetupResult, false)
           if (hydratedEl) {
             // vnode may have been replaced if an update happened before the
             // async dep is reoslved.
@@ -438,7 +438,8 @@ function createSuspenseBoundary(
             // consider the comment placeholder case.
             hydratedEl ? null : next(instance.subTree),
             suspense,
-            isSVG
+            isSVG,
+            optimized
           )
           updateHOCHostEl(instance, vnode.el)
           if (__DEV__) {

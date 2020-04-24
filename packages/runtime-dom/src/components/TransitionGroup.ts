@@ -9,10 +9,10 @@ import {
 } from './Transition'
 import {
   Fragment,
+  Comment,
   VNode,
   warn,
   resolveTransitionHooks,
-  toRaw,
   useTransitionState,
   getCurrentInstance,
   setTransitionHooks,
@@ -20,6 +20,7 @@ import {
   onUpdated,
   SetupContext
 } from '@vue/runtime-core'
+import { toRaw } from '@vue/reactivity'
 
 interface Position {
   top: number
@@ -35,6 +36,12 @@ export type TransitionGroupProps = Omit<TransitionProps, 'mode'> & {
 }
 
 const TransitionGroupImpl = {
+  props: {
+    ...TransitionPropsValidators,
+    tag: String,
+    moveClass: String
+  },
+
   setup(props: TransitionGroupProps, { slots }: SetupContext) {
     const instance = getCurrentInstance()!
     const state = useTransitionState()
@@ -108,7 +115,7 @@ const TransitionGroupImpl = {
             child,
             resolveTransitionHooks(child, cssTransitionProps, state, instance)
           )
-        } else if (__DEV__) {
+        } else if (__DEV__ && child.type !== Comment) {
           warn(`<TransitionGroup> children must be keyed.`)
         }
       }
@@ -129,19 +136,13 @@ const TransitionGroupImpl = {
   }
 }
 
+// remove mode props as TransitionGroup doesn't support it
+delete TransitionGroupImpl.props.mode
+
 export const TransitionGroup = (TransitionGroupImpl as unknown) as {
   new (): {
     $props: TransitionGroupProps
   }
-}
-
-if (__DEV__) {
-  const props = ((TransitionGroup as any).props = {
-    ...TransitionPropsValidators,
-    tag: String,
-    moveClass: String
-  })
-  delete props.mode
 }
 
 function callPendingCbs(c: VNode) {

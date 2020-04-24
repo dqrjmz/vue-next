@@ -1,3 +1,4 @@
+// 浏览器环境并且是开发环境
 if (__BROWSER__ && __DEV__) {
   console[console.info ? 'info' : 'log'](
     `You are running a development build of Vue.\n` +

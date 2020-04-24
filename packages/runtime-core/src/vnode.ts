@@ -13,12 +13,11 @@ import {
 import {
   ComponentInternalInstance,
   Data,
-  SetupProxySymbol,
   Component,
   ClassComponent
 } from './component'
 import { RawSlots } from './componentSlots'
-import { isReactive, Ref } from '@vue/reactivity'
+import { isProxy, Ref, toRaw } from '@vue/reactivity'
 import { AppContext } from './apiCreateApp'
 import {
   SuspenseImpl,
@@ -29,7 +28,7 @@ import { DirectiveBinding } from './directives'
 import { TransitionHooks } from './components/BaseTransition'
 import { warn } from './warning'
 import { currentScopeId } from './helpers/scopeId'
-import { PortalImpl, isPortal } from './components/Portal'
+import { TeleportImpl, isTeleport } from './components/Teleport'
 import { currentRenderingInstance } from './componentRenderUtils'
 import { RendererNode, RendererElement } from './renderer'
 
@@ -50,7 +49,7 @@ export type VNodeTypes =
   | typeof Static
   | typeof Comment
   | typeof Fragment
-  | typeof PortalImpl
+  | typeof TeleportImpl
   | typeof SuspenseImpl
 
 export type VNodeRef =
@@ -113,7 +112,8 @@ export interface VNode<HostNode = RendererNode, HostElement = RendererElement> {
   // DOM
   el: HostNode | null
   anchor: HostNode | null // fragment anchor
-  target: HostElement | null // portal target
+  target: HostElement | null // teleport target
+  targetAnchor: HostNode | null // teleport target anchor
 
   // optimization only
   shapeFlag: number
@@ -200,7 +200,6 @@ export function isVNode(value: any): value is VNode {
 
 export function isSameVNodeType(n1: VNode, n2: VNode): boolean {
   if (
-    __BUNDLER__ &&
     __DEV__ &&
     n2.shapeFlag & ShapeFlags.COMPONENT &&
     (n2.type as Component).__hmrUpdated
@@ -234,6 +233,8 @@ const createVNodeWithArgsTransform = (
   )
 }
 
+export const InternalObjectKey = `__vInternal`
+
 export const createVNode = (__DEV__
   ? createVNodeWithArgsTransform
   : _createVNode) as typeof _createVNode
@@ -260,7 +261,7 @@ function _createVNode(
   // class & style normalization.
   if (props) {
     // for reactive or proxy objects, we need to clone it to enable mutation.
-    if (isReactive(props) || SetupProxySymbol in props) {
+    if (isProxy(props) || InternalObjectKey in props) {
       props = extend({}, props)
     }
     let { class: klass, style } = props
@@ -270,7 +271,7 @@ function _createVNode(
     if (isObject(style)) {
       // reactive state objects need to be cloned since they are likely to be
       // mutated
-      if (isReactive(style) && !isArray(style)) {
+      if (isProxy(style) && !isArray(style)) {
         style = extend({}, style)
       }
       props.style = normalizeStyle(style)
@@ -282,13 +283,25 @@ function _createVNode(
     ? ShapeFlags.ELEMENT
     : __FEATURE_SUSPENSE__ && isSuspense(type)
       ? ShapeFlags.SUSPENSE
-      : isPortal(type)
-        ? ShapeFlags.PORTAL
+      : isTeleport(type)
+        ? ShapeFlags.TELEPORT
         : isObject(type)
           ? ShapeFlags.STATEFUL_COMPONENT
           : isFunction(type)
             ? ShapeFlags.FUNCTIONAL_COMPONENT
             : 0
+
+  if (__DEV__ && shapeFlag & ShapeFlags.STATEFUL_COMPONENT && isProxy(type)) {
+    type = toRaw(type)
+    warn(
+      `Vue received a Component which was made a reactive object. This can ` +
+        `lead to unnecessary performance overhead, and should be avoided by ` +
+        `marking the component with \`markRaw\` or using \`shallowRef\` ` +
+        `instead of \`ref\`.`,
+      `\nComponent that was made reactive: `,
+      type
+    )
+  }
 
   const vnode: VNode = {
     _isVNode: true,
@@ -308,6 +321,7 @@ function _createVNode(
     el: null,
     anchor: null,
     target: null,
+    targetAnchor: null,
     shapeFlag,
     patchFlag,
     dynamicProps,
@@ -350,13 +364,14 @@ export function cloneVNode<T, U>(
     props: extraProps
       ? vnode.props
         ? mergeProps(vnode.props, extraProps)
-        : extraProps
+        : extend({}, extraProps)
       : vnode.props,
     key: vnode.key,
     ref: vnode.ref,
     scopeId: vnode.scopeId,
     children: vnode.children,
     target: vnode.target,
+    targetAnchor: vnode.targetAnchor,
     shapeFlag: vnode.shapeFlag,
     patchFlag: vnode.patchFlag,
     dynamicProps: vnode.dynamicProps,
@@ -419,19 +434,24 @@ export function cloneIfMounted(child: VNode): VNode {
 
 export function normalizeChildren(vnode: VNode, children: unknown) {
   let type = 0
+  const { shapeFlag } = vnode
   if (children == null) {
     children = null
   } else if (isArray(children)) {
     type = ShapeFlags.ARRAY_CHILDREN
   } else if (typeof children === 'object') {
-    // in case <component :is="x"> resolves to native element, the vnode call
-    // will receive slots object.
-    if (vnode.shapeFlag & ShapeFlags.ELEMENT && (children as any).default) {
+    // Normalize slot to plain children
+    if (
+      (shapeFlag & ShapeFlags.ELEMENT || shapeFlag & ShapeFlags.TELEPORT) &&
+      (children as any).default
+    ) {
       normalizeChildren(vnode, (children as any).default())
       return
     } else {
       type = ShapeFlags.SLOTS_CHILDREN
-      if (!(children as RawSlots)._) {
+      if (!(children as RawSlots)._ && !(InternalObjectKey in children!)) {
+        // if slots are not normalized, attach context instance
+        // (compiled / normalized slots already have context)
         ;(children as RawSlots)._ctx = currentRenderingInstance
       }
     }
@@ -440,7 +460,13 @@ export function normalizeChildren(vnode: VNode, children: unknown) {
     type = ShapeFlags.SLOTS_CHILDREN
   } else {
     children = String(children)
-    type = ShapeFlags.TEXT_CHILDREN
+    // force teleport children to array so it can be moved around
+    if (shapeFlag & ShapeFlags.TELEPORT) {
+      type = ShapeFlags.ARRAY_CHILDREN
+      children = [createTextVNode(children as string)]
+    } else {
+      type = ShapeFlags.TEXT_CHILDREN
+    }
   }
   vnode.children = children as VNodeNormalizedChildren
   vnode.shapeFlag |= type

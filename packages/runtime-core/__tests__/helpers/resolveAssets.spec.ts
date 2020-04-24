@@ -7,7 +7,8 @@ import {
   Directive,
   resolveDynamicComponent,
   h,
-  serializeInner
+  serializeInner,
+  createVNode
 } from '@vue/runtime-test'
 import { mockWarn } from '@vue/shared'
 
@@ -18,10 +19,10 @@ describe('resolveAssets', () => {
     const FooBar = () => null
     const BarBaz = { mounted: () => null }
 
-    let component1: Component
-    let component2: Component
-    let component3: Component
-    let component4: Component
+    let component1: Component | string
+    let component2: Component | string
+    let component3: Component | string
+    let component4: Component | string
     let directive1: Directive
     let directive2: Directive
     let directive3: Directive
@@ -134,7 +135,7 @@ describe('resolveAssets', () => {
       const Root = {
         setup() {
           return () => {
-            return h(resolveDynamicComponent('div') as string, null, {
+            return createVNode(resolveDynamicComponent('div') as string, null, {
               default: () => 'hello'
             })
           }
