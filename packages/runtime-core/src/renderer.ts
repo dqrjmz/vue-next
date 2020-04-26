@@ -284,15 +284,15 @@ export const queuePostRenderEffect = __FEATURE_SUSPENSE__
  * })
  * ```
  */
-// 创建app渲染器
 /**
- *
+ * 创建app渲染器
  * @param options  渲染器配置参数
  */
 export function createRenderer<
   HostNode = RendererNode,
   HostElement = RendererElement
 >(options: RendererOptions<HostNode, HostElement>) {
+  // 基础的创建渲染器的方法
   return baseCreateRenderer<HostNode, HostElement>(options)
 }
 
@@ -322,6 +322,7 @@ function baseCreateRenderer(
   options: RendererOptions,
   createHydrationFns?: typeof createHydrationFunctions
 ): any {
+  // 获取渲染器的配置参数
   const {
     insert: hostInsert,
     remove: hostRemove,
@@ -357,6 +358,7 @@ function baseCreateRenderer(
       n1 = null
     }
 
+    // 根据vnode的类型，进行不同的处理
     const { type, ref, shapeFlag } = n2
     switch (type) {
       case Text:

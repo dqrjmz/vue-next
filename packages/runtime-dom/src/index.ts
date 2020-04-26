@@ -25,6 +25,7 @@ let renderer: Renderer | HydrationRenderer
 
 let enabledHydration = false
 
+// 获取渲染器
 function ensureRenderer() {
   return renderer || (renderer = createRenderer(rendererOptions))
 }
@@ -46,28 +47,44 @@ export const hydrate = ((...args) => {
   ensureHydrationRenderer().hydrate(...args)
 }) as RootHydrateFunction
 
+// 创建app函数
 export const createApp = ((...args) => {
+  // 渲染器创建app
   const app = ensureRenderer().createApp(...args)
 
+  // 开发中
   if (__DEV__) {
+    // 注入原生标签检查
     injectNativeTagCheck(app)
   }
 
+  // 获取app的安装方法
   const { mount } = app
+  // 重新改写安装方法
   app.mount = (containerOrSelector: Element | string): any => {
+    // 获取挂载点的dom对象
     const container = normalizeContainer(containerOrSelector)
+    // 不存在，不再进行下去
     if (!container) return
+    // 获取app的根组件实例
     const component = app._component
+    // 非函数，没有render函数，没有template
     if (!isFunction(component) && !component.render && !component.template) {
+      // 直接将挂载点中的html当作模板
       component.template = container.innerHTML
     }
     // clear content before mounting
+    // 安装前清空挂载店内容
     container.innerHTML = ''
+    // 安装组件
     const proxy = mount(container)
+    // 移除挂载店的v-cloak属性
     container.removeAttribute('v-cloak')
+    // 安装
     return proxy
   }
 
+  // 返回app
   return app
 }) as CreateAppFunction<Element>
 
@@ -98,14 +115,23 @@ function injectNativeTagCheck(app: App) {
   })
 }
 
+/**
+ * 正规化dom节点
+ * @param container 挂载的dom节点
+ */
 function normalizeContainer(container: Element | string): Element | null {
+  // 字符串
   if (isString(container)) {
+    // 转换为dom对象
     const res = document.querySelector(container)
+    // 开发中， dom对象不存在
     if (__DEV__ && !res) {
       warn(`Failed to mount app: mount target selector returned null.`)
     }
+    // 存在之际返回
     return res
   }
+  // 非字符串直接返回
   return container
 }
 

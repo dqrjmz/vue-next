@@ -118,19 +118,23 @@ function cleanup(effect: ReactiveEffect) {
   }
 }
 
+// 是否可以追踪
 let shouldTrack = true
 const trackStack: boolean[] = []
 
+// 暂停响应式系统
 export function pauseTracking() {
   trackStack.push(shouldTrack)
   shouldTrack = false
 }
 
+// 启用响应式系统
 export function enableTracking() {
   trackStack.push(shouldTrack)
   shouldTrack = true
 }
 
+// 重置响应式系统
 export function resetTracking() {
   const last = trackStack.pop()
   shouldTrack = last === undefined ? true : last
@@ -140,14 +144,20 @@ export function track(target: object, type: TrackOpTypes, key: unknown) {
   if (!shouldTrack || activeEffect === undefined) {
     return
   }
+  // 获取目标对象的依赖
   let depsMap = targetMap.get(target)
+  // 依赖映射为空
   if (!depsMap) {
+    // 添加目标依赖集合
     targetMap.set(target, (depsMap = new Map()))
   }
+  // 依赖集合
   let dep = depsMap.get(key)
   if (!dep) {
+    // 对象键值的依赖
     depsMap.set(key, (dep = new Set()))
   }
+  // 依赖中没有
   if (!dep.has(activeEffect)) {
     dep.add(activeEffect)
     activeEffect.deps.push(dep)
@@ -162,6 +172,15 @@ export function track(target: object, type: TrackOpTypes, key: unknown) {
   }
 }
 
+/**
+ * 
+ * @param target 目标对象
+ * @param type 
+ * @param key 
+ * @param newValue 
+ * @param oldValue 
+ * @param oldTarget 
+ */
 export function trigger(
   target: object,
   type: TriggerOpTypes,
@@ -170,6 +189,7 @@ export function trigger(
   oldValue?: unknown,
   oldTarget?: Map<unknown, unknown> | Set<unknown>
 ) {
+  // 对象没有依赖，没有被追踪
   const depsMap = targetMap.get(target)
   if (!depsMap) {
     // never been tracked

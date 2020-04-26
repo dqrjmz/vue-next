@@ -5,8 +5,11 @@ import { isObject, hasOwn, isSymbol, hasChanged, isArray } from '@vue/shared'
 import { isRef } from './ref'
 
 const builtInSymbols = new Set(
+  // 获取Symbol的自身属性
   Object.getOwnPropertyNames(Symbol)
+  // 返回key
     .map(key => (Symbol as any)[key])
+    // key需要时Symbol类型
     .filter(isSymbol)
 )
 
@@ -15,14 +18,19 @@ const shallowGet = /*#__PURE__*/ createGetter(false, true)
 const readonlyGet = /*#__PURE__*/ createGetter(true)
 const shallowReadonlyGet = /*#__PURE__*/ createGetter(true, true)
 
+// 数组仪器
 const arrayInstrumentations: Record<string, Function> = {}
 ;['includes', 'indexOf', 'lastIndexOf'].forEach(key => {
+  // 将方法添加到数组一起中
   arrayInstrumentations[key] = function(...args: any[]): any {
+    
     const arr = toRaw(this) as any
+    // 遍历数组
     for (let i = 0, l = (this as any).length; i < l; i++) {
       track(arr, TrackOpTypes.GET, i + '')
     }
     // we run the method using the original args first (which may be reactive)
+    // 
     const res = arr[key](...args)
     if (res === -1 || res === false) {
       // if that didn't work, run it again using raw values.
@@ -33,19 +41,31 @@ const arrayInstrumentations: Record<string, Function> = {}
   }
 })
 
+/**
+ * 创建get生成
+ * @param isReadonly 是否只读
+ * @param shallow 浅代理
+ */
 function createGetter(isReadonly = false, shallow = false) {
+  // 目标对象，对象的键 代理对象
   return function get(target: object, key: string | symbol, receiver: object) {
+    // 目标对象是不是数组
     const targetIsArray = isArray(target)
+    // 数组，
     if (targetIsArray && hasOwn(arrayInstrumentations, key)) {
+      // 目标对象，键值，get调用时的this
       return Reflect.get(arrayInstrumentations, key, receiver)
     }
     const res = Reflect.get(target, key, receiver)
 
+    // key为Symbol类型，Symbol类型内置的自身属性
     if (isSymbol(key) && builtInSymbols.has(key)) {
       return res
     }
 
+    // 浅
     if (shallow) {
+      // 不是只读 
       !isReadonly && track(target, TrackOpTypes.GET, key)
       return res
     }

@@ -58,6 +58,13 @@ export const ErrorTypeStrings: Record<number | string, string> = {
 
 export type ErrorTypes = LifecycleHooks | ErrorCodes
 
+/**
+ * 调用钩子函数，使用异常处理
+ * @param fn 钩子函数
+ * @param instance 对象实例
+ * @param type 错误类型
+ * @param args 
+ */
 export function callWithErrorHandling(
   fn: Function,
   instance: ComponentInternalInstance | null,
@@ -73,12 +80,20 @@ export function callWithErrorHandling(
   return res
 }
 
+/**
+ * 
+ * @param fn 钩子函数
+ * @param instance 
+ * @param type 
+ * @param args 
+ */
 export function callWithAsyncErrorHandling(
   fn: Function | Function[],
   instance: ComponentInternalInstance | null,
   type: ErrorTypes,
   args?: unknown[]
 ): any[] {
+  // 函数
   if (isFunction(fn)) {
     const res = callWithErrorHandling(fn, instance, type, args)
     if (res && !res._isVue && isPromise(res)) {

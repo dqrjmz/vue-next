@@ -32,6 +32,7 @@ import { onBeforeUnmount } from './apiLifecycle'
 import { queuePostRenderEffect } from './renderer'
 import { warn } from './warning'
 
+// 没有价值的
 export type WatchEffect = (onInvalidate: InvalidateCbRegistrator) => void
 
 export type WatchSource<T = any> = Ref<T> | ComputedRef<T> | (() => T)
@@ -70,6 +71,11 @@ export type StopHandle = () => void
 const invoke = (fn: Function) => fn()
 
 // Simple effect.
+/**
+ * 监听变化
+ * @param effect 
+ * @param options 
+ */
 export function watchEffect(
   effect: WatchEffect,
   options?: BaseWatchOptions
@@ -116,18 +122,27 @@ export function watch<T = any>(
   return doWatch(source, cb, options)
 }
 
+/**
+ * 
+ * @param source 
+ * @param cb 
+ * @param param2 
+ */
 function doWatch(
   source: WatchSource | WatchSource[] | WatchEffect,
   cb: WatchCallback | null,
   { immediate, deep, flush, onTrack, onTrigger }: WatchOptions = EMPTY_OBJ
 ): StopHandle {
+  // 开发中，没有回调
   if (__DEV__ && !cb) {
+    // 非立即
     if (immediate !== undefined) {
       warn(
         `watch() "immediate" option is only respected when using the ` +
           `watch(source, callback, options?) signature.`
       )
     }
+    // 非深度
     if (deep !== undefined) {
       warn(
         `watch() "deep" option is only respected when using the ` +
@@ -136,10 +151,13 @@ function doWatch(
     }
   }
 
+  // 
   const instance = currentInstance
 
   let getter: () => any
+  // 是数组
   if (isArray(source)) {
+
     getter = () =>
       source.map(
         s =>
@@ -147,9 +165,9 @@ function doWatch(
             ? s.value
             : callWithErrorHandling(s, instance, ErrorCodes.WATCH_GETTER)
       )
-  } else if (isRef(source)) {
+  } else if (isRef(source)) { // 是ref对象
     getter = () => source.value
-  } else if (cb) {
+  } else if (cb) { // 有回调
     // getter with cb
     getter = () =>
       callWithErrorHandling(source, instance, ErrorCodes.WATCH_GETTER)

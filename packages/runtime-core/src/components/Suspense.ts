@@ -69,7 +69,7 @@ export const SuspenseImpl = {
   hydrate: hydrateSuspense
 }
 
-// Force-casted public typing for h and TSX props inference
+// Force-casted public typing for h and TSX props inference(悬念)
 export const Suspense = ((__FEATURE_SUSPENSE__
   ? SuspenseImpl
   : null) as any) as {

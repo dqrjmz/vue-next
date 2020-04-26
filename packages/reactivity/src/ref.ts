@@ -20,11 +20,17 @@ export interface Ref<T = any> {
   value: T
 }
 
+// 将值，为对象时，转换为响应式对象
 const convert = <T extends unknown>(val: T): T =>
   isObject(val) ? reactive(val) : val
 
 export function isRef<T>(r: Ref<T> | unknown): r is Ref<T>
+/**
+ * 当前对象是否为ref对象
+ * @param r 
+ */
 export function isRef(r: any): r is Ref {
+  // r对象是否存在_isRef属性
   return r ? r._isRef === true : false
 }
 
@@ -34,29 +40,50 @@ export function ref<T extends object>(
 export function ref<T>(value: T): Ref<UnwrapRef<T>>
 export function ref<T = any>(): Ref<T | undefined>
 export function ref(value?: unknown) {
+  // 创建对值的引用
   return createRef(value)
 }
 
 export function shallowRef<T>(value: T): T extends Ref ? T : Ref<T>
 export function shallowRef<T = any>(): Ref<T | undefined>
+/**
+ * 浅引用
+ * @param value 
+ */
 export function shallowRef(value?: unknown) {
   return createRef(value, true)
 }
 
+/**
+ * 返回一个对象，只有一个value属性，指向这个内部值
+ * @param rawValue 原始值
+ * @param shallow 浅
+ */
 function createRef(rawValue: unknown, shallow = false) {
+  // 当前是否为
   if (isRef(rawValue)) {
     return rawValue
   }
+  // 是否对值进行响应式处理
   let value = shallow ? rawValue : convert(rawValue)
+  // 这个值就是根据内部之创建的ref对象
   const r = {
+    // 标识这个对象式ref对象
     _isRef: true,
+    // vulue属性的
+    // get访问器
     get value() {
       track(r, TrackOpTypes.GET, 'value')
+      // 返回
       return value
     },
+    // set访问器（修改内部值时）
     set value(newVal) {
+      // 值是否发生变化（在set的时候
       if (hasChanged(toRaw(newVal), rawValue)) {
+        // 将原始值保留下来
         rawValue = newVal
+        // 将新值进行转化
         value = shallow ? newVal : convert(newVal)
         trigger(
           r,
@@ -79,6 +106,7 @@ export function triggerRef(ref: Ref) {
   )
 }
 
+// 从ref对象中获取原始值
 export function unref<T>(ref: T): T extends Ref<infer V> ? V : T {
   return isRef(ref) ? (ref.value as any) : ref
 }
@@ -108,6 +136,10 @@ export function customRef<T>(factory: CustomRefFactory<T>): Ref<T> {
   return r as any
 }
 
+/**
+ * 将对象进行ref化
+ * @param object 
+ */
 export function toRefs<T extends object>(
   object: T
 ): { [K in keyof T]: Ref<T[K]> } {
@@ -121,6 +153,7 @@ export function toRefs<T extends object>(
   return ret
 }
 
+// 将对象的某个属性进行ref对象化
 export function toRef<T extends object, K extends keyof T>(
   object: T,
   key: K

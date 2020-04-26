@@ -194,7 +194,12 @@ export function createBlock(
   return vnode
 }
 
+/**
+ * 是否式vnode
+ * @param value 值
+ */
 export function isVNode(value: any): value is VNode {
+  // 真值，并且_isVNode属性为true
   return value ? value._isVNode === true : false
 }
 
@@ -239,6 +244,14 @@ export const createVNode = (__DEV__
   ? createVNodeWithArgsTransform
   : _createVNode) as typeof _createVNode
 
+  /**
+   * 
+   * @param type 节点类型
+   * @param props 
+   * @param children 子节点
+   * @param patchFlag 
+   * @param dynamicProps 
+   */
 function _createVNode(
   type: VNodeTypes | ClassComponent,
   props: (Data & VNodeProps) | null = null,

@@ -23,13 +23,16 @@ export function computed<T>(getter: ComputedGetter<T>): ComputedRef<T>
 export function computed<T>(
   options: WritableComputedOptions<T>
 ): WritableComputedRef<T>
+// get访问器
 export function computed<T>(
   getterOrOptions: ComputedGetter<T> | WritableComputedOptions<T>
 ) {
   let getter: ComputedGetter<T>
   let setter: ComputedSetter<T>
 
+  // 传入的是函数
   if (isFunction(getterOrOptions)) {
+    // 函数直接作为getter
     getter = getterOrOptions
     setter = __DEV__
       ? () => {
@@ -37,6 +40,7 @@ export function computed<T>(
         }
       : NOOP
   } else {
+    // 非函数，获取get,set，作为getter,setter
     getter = getterOrOptions.get
     setter = getterOrOptions.set
   }
@@ -56,10 +60,13 @@ export function computed<T>(
       }
     }
   })
+  // 计算属性，只返回value不设置值，暴露给用户自定修改
   computed = {
+    // 是一个ref对象
     _isRef: true,
     // expose effect so computed can be stopped
     effect: runner,
+    // 有get,set
     get value() {
       if (dirty) {
         value = runner()
@@ -69,6 +76,7 @@ export function computed<T>(
       return value
     },
     set value(newValue: T) {
+      // 直接
       setter(newValue)
     }
   } as any

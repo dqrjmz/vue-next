@@ -269,17 +269,21 @@ export function createComponentInstance(
 
 export let currentInstance: ComponentInternalInstance | null = null
 
+// 获取组件实例
 export const getCurrentInstance: () => ComponentInternalInstance | null = () =>
   currentInstance || currentRenderingInstance
 
+  // 设置组件实例
 export const setCurrentInstance = (
   instance: ComponentInternalInstance | null
 ) => {
   currentInstance = instance
 }
 
+// 是否是内置的标签
 const isBuiltInTag = /*#__PURE__*/ makeMap('slot,component')
 
+// 验证组件名称
 export function validateComponentName(name: string, config: AppConfig) {
   const appIsNativeTag = config.isNativeTag || NO
   if (isBuiltInTag(name) || appIsNativeTag(name)) {

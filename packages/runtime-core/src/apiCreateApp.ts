@@ -109,29 +109,37 @@ export function createAppAPI<HostElement>(
   render: RootRenderFunction,
   hydrate?: RootHydrateFunction
 ): CreateAppFunction<HostElement> {
+  /**
+   * 创建app
+   * 1.  
+   */
   return function createApp(rootComponent, rootProps = null) {
     if (rootProps != null && !isObject(rootProps)) {
       __DEV__ && warn(`root props passed to app.mount() must be an object.`)
       rootProps = null
     }
 
+    // 创建app的上下文对象
     const context = createAppContext()
-    // 值的集合不重复
+    // 值的集合不重复（不让插件重复安装
     const installedPlugins = new Set()
-
+    // app没有被安装
     let isMounted = false
 
     const app: App = {
       _component: rootComponent as Component,
       _props: rootProps,
       _container: null,
+      // app的上下文
       _context: context,
 
       get config() {
+        // 获取app的配置
         return context.config
       },
 
       set config(v) {
+        // app的配置不能被替换
         if (__DEV__) {
           warn(
             `app.config cannot be replaced. Modify individual options instead.`
@@ -139,6 +147,7 @@ export function createAppAPI<HostElement>(
         }
       },
 
+      // 注册插件
       use(plugin: Plugin, ...options: any[]) {
         if (installedPlugins.has(plugin)) {
           __DEV__ && warn(`Plugin has already been applied to target app.`)
@@ -157,6 +166,7 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      // 混入
       mixin(mixin: ComponentOptions) {
         if (__FEATURE_OPTIONS__) {
           if (!context.mixins.includes(mixin)) {
@@ -173,6 +183,7 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      // 组件
       component(name: string, component?: PublicAPIComponent): any {
         if (__DEV__) {
           validateComponentName(name, context.config)
@@ -187,6 +198,7 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      // 指令
       directive(name: string, directive?: Directive) {
         if (__DEV__) {
           validateDirectiveName(name)
@@ -202,6 +214,7 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      // 安装组件（根挂载点
       mount(rootContainer: HostElement, isHydrate?: boolean): any {
         if (!isMounted) {
           const vnode = createVNode(rootComponent as Component, rootProps)
@@ -221,7 +234,9 @@ export function createAppAPI<HostElement>(
           } else {
             render(vnode, rootContainer)
           }
+          // app已被安装
           isMounted = true
+          // 在app上添加_container属性作为 根挂载点的引用
           app._container = rootContainer
           return vnode.component!.proxy
         } else if (__DEV__) {
@@ -231,6 +246,7 @@ export function createAppAPI<HostElement>(
         }
       },
 
+      // 卸载
       unmount() {
         if (isMounted) {
           render(null, app._container)

@@ -55,6 +55,7 @@ export const isFunction = (val: unknown): val is Function =>
   typeof val === 'function'
 export const isString = (val: unknown): val is string => typeof val === 'string'
 export const isSymbol = (val: unknown): val is symbol => typeof val === 'symbol'
+// typeof为'object'，但是null的对象
 export const isObject = (val: unknown): val is Record<any, any> =>
   val !== null && typeof val === 'object'
 
@@ -66,6 +67,7 @@ export const objectToString = Object.prototype.toString
 export const toTypeString = (value: unknown): string =>
   objectToString.call(value)
 
+  // 获取值的真实类型，Object,Array，Number,String,Boolean,RegExp,Date等（获取的是对象类型）
 export const toRawType = (value: unknown): string => {
   return toTypeString(value).slice(8, -1)
 }
@@ -109,7 +111,9 @@ export const capitalize = cacheStringFunction(
 )
 
 // compare whether a value has changed, accounting for NaN.
+// 比较是否一个值已经被改变
 export const hasChanged = (value: any, oldValue: any): boolean =>
+// 新值不等于老值，新值全等新值或者老值全等老值
   value !== oldValue && (value === value || oldValue === oldValue)
 
 // for converting {{ interpolation }} values to displayed strings.
