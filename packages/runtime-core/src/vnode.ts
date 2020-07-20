@@ -235,13 +235,19 @@ export function createBlock(
 }
 
 /**
- * 是否式vnode
- * @param value 值
+ * 是否是vnode
+ * @param value 节点
  */
 export function isVNode(value: any): value is VNode {
+  // 存在__v_isVnode属性
   return value ? value.__v_isVNode === true : false
 }
 
+/**
+ * vnode的类型是否一样
+ * @param n1 
+ * @param n2 
+ */
 export function isSameVNodeType(n1: VNode, n2: VNode): boolean {
   if (
     __DEV__ &&
@@ -283,10 +289,13 @@ const createVNodeWithArgsTransform = (
 
 export const InternalObjectKey = `__vInternal`
 
+// key != null 返回key,== 返回null
 const normalizeKey = ({ key }: VNodeProps): VNode['key'] =>
   key != null ? key : null
 
 const normalizeRef = ({ ref }: VNodeProps): VNode['ref'] => {
+  // ref != null && 是数组 返回ref
+  // == null 返回 null
   return (ref != null
     ? isArray(ref)
       ? ref
@@ -299,9 +308,9 @@ export const createVNode = (__DEV__
   : _createVNode) as typeof _createVNode
 
   /**
-   * 
+   * 创建vnode
    * @param type 节点类型
-   * @param props 
+   * @param props 属性
    * @param children 子节点
    * @param patchFlag 
    * @param dynamicProps 
@@ -314,18 +323,23 @@ function _createVNode(
   dynamicProps: string[] | null = null,
   isBlockNode = false
 ): VNode {
+  // 类型不存在 || null 动态组件
   if (!type || type === NULL_DYNAMIC_COMPONENT) {
+    // 节点无效
     if (__DEV__ && !type) {
       warn(`Invalid vnode type when creating vnode: ${type}.`)
     }
+    // 重新给一个注释节点
     type = Comment
   }
-
+  // 是否是vnode
   if (isVNode(type)) {
+    // 是直接克隆返回
     return cloneVNode(type, props, children)
   }
 
   // class component normalization.
+  // 是否是函数
   if (isFunction(type) && '__vccOpts' in type) {
     type = type.__vccOpts
   }
@@ -375,6 +389,7 @@ function _createVNode(
     )
   }
 
+  // 实例化一个vnode节点
   const vnode: VNode = {
     __v_isVNode: true,
     __v_skip: true,
@@ -410,6 +425,7 @@ function _createVNode(
   // presence of a patch flag indicates this node needs patching on updates.
   // component nodes also should always be patched, because even if the
   // component doesn't need to update, it needs to persist the instance on to
+  // 下一个vnode,以至于之后能够被适当的卸载
   // the next vnode so that it can be properly unmounted later.
   if (
     shouldTrack > 0 &&
@@ -542,10 +558,18 @@ export function cloneIfMounted(child: VNode): VNode {
   return child.el === null ? child : cloneVNode(child)
 }
 
+/**
+ * 规范化子节点
+ * @param vnode 
+ * @param children 
+ */
 export function normalizeChildren(vnode: VNode, children: unknown) {
   let type = 0
+  // 节点类型
   const { shapeFlag } = vnode
+  // 子节点不存在
   if (children == null) {
+    // 赋值为null
     children = null
   } else if (isArray(children)) {
     type = ShapeFlags.ARRAY_CHILDREN
@@ -590,6 +614,7 @@ export function normalizeChildren(vnode: VNode, children: unknown) {
       type = ShapeFlags.TEXT_CHILDREN
     }
   }
+
   vnode.children = children as VNodeNormalizedChildren
   vnode.shapeFlag |= type
 }

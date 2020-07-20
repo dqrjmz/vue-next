@@ -56,17 +56,23 @@ export const hasOwn = (
   key: string | symbol
 ): key is keyof typeof val => hasOwnProperty.call(val, key)
 
+// 是否为数组
 export const isArray = Array.isArray
+// val是否是Date(instanceof)
 export const isDate = (val: unknown): val is Date => val instanceof Date
+// val是否是function typeof
 export const isFunction = (val: unknown): val is Function =>
   typeof val === 'function'
+  // val是否是字符串类型(typeof)
 export const isString = (val: unknown): val is string => typeof val === 'string'
+// val是否是symbol(typeof)
 export const isSymbol = (val: unknown): val is symbol => typeof val === 'symbol'
-// typeof为'object'，但是null的对象
+// val!==null && 但,是'object',是否为object类型
 export const isObject = (val: unknown): val is Record<any, any> =>
   val !== null && typeof val === 'object'
-
+// 是否是Promise类型
 export const isPromise = <T = any>(val: unknown): val is Promise<T> => {
+  // 是对象 && 属性then是函数 && 属性catch是函数
   return isObject(val) && isFunction(val.then) && isFunction(val.catch)
 }
 
@@ -139,6 +145,7 @@ export const invokeArrayFns = (fns: Function[], arg?: any) => {
 }
 
 export const def = (obj: object, key: string | symbol, value: any) => {
+  //  给对象定义,可配置可配置,不可枚举属性
   Object.defineProperty(obj, key, {
     configurable: true,
     enumerable: false,
@@ -146,7 +153,10 @@ export const def = (obj: object, key: string | symbol, value: any) => {
   })
 }
 
+// 将变量转换为数值类型
 export const toNumber = (val: any): any => {
+  // 解析为float
   const n = parseFloat(val)
+  // NaN返回val,否则返回数值n
   return isNaN(n) ? val : n
 }

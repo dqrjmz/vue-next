@@ -1,3 +1,5 @@
+// 这些标签配置在complier-dom和runtime-dom之间共享
+// 所以为了避免两者之间创建一个依赖关系,他们必须被提取到共享中
 // These tag configs are shared between compiler-dom and runtime-dom, so they
 // must be extracted in shared to avoid creating a dependency between the two.
 import { makeMap } from './makeMap'

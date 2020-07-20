@@ -26,7 +26,7 @@ const target = args._.length ? fuzzyMatchTarget(args._)[0] : 'vue'
 // 获取打包的模块格式
 const formats = args.formats || args.f
 // 源码视图
-const sourceMap = args.sourcemap || args.s
+const sourceMap = args.sourcemap || args.s || true
 // 获取git提交记录
 const commit = execa.sync('git', ['rev-parse', 'HEAD']).stdout.slice(0, 7)
 

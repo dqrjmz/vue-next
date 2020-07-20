@@ -350,6 +350,12 @@ const emptyAppContext = createAppContext()
 // 创建组件实例
 let uid = 0
 
+/**
+ * 创建组件实例
+ * @param vnode 
+ * @param parent 
+ * @param suspense 
+ */
 export function createComponentInstance(
   vnode: VNode,
   parent: ComponentInternalInstance | null,
@@ -358,6 +364,7 @@ export function createComponentInstance(
   // inherit parent app context - or - if root, adopt from root vnode
   const appContext =
     (parent ? parent.appContext : vnode.appContext) || emptyAppContext
+    // 组件内部实例
   const instance: ComponentInternalInstance = {
     uid: uid++,
     vnode,
@@ -458,6 +465,7 @@ export function validateComponentName(name: string, config: AppConfig) {
 export let isInSSRComponentSetup = false
 
 export function setupComponent(
+  // 组件内部实例
   instance: ComponentInternalInstance,
   isSSR = false
 ) {
@@ -465,10 +473,12 @@ export function setupComponent(
 
   const { props, children, shapeFlag } = instance.vnode
   const isStateful = shapeFlag & ShapeFlags.STATEFUL_COMPONENT
+  // 初始化Prop,Slot
   initProps(instance, props, isStateful, isSSR)
   initSlots(instance, children)
 
   const setupResult = isStateful
+  // 安装有状态组件
     ? setupStatefulComponent(instance, isSSR)
     : undefined
   isInSSRComponentSetup = false

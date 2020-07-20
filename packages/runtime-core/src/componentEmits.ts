@@ -40,6 +40,7 @@ export function emit(
   event: string,
   ...args: any[]
 ) {
+  // 获取vnode的props
   const props = instance.vnode.props || EMPTY_OBJ
 
   if (__DEV__) {
@@ -66,11 +67,14 @@ export function emit(
       }
     }
   }
-
+  // 处理 名称, on+eventname
   let handlerName = `on${capitalize(event)}`
+  // 获取处理事件
   let handler = props[handlerName]
+  // 用于v-model更新事件,相当于通过bkbab-case传递属性也除法
   // for v-model update:xxx events, also trigger kebab-case equivalent
   // for props passed via kebab-case
+  // 
   if (!handler && event.startsWith('update:')) {
     handlerName = `on${capitalize(hyphenate(event))}`
     handler = props[handlerName]

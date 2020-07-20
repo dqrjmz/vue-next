@@ -21,9 +21,12 @@ declare module '@vue/reactivity' {
   }
 }
 
+// 渲染器配置选项函数集合，增删改查
 const rendererOptions = extend({ patchProp, forcePatchProp }, nodeOps)
 
+// 懒创建渲染器， 这个使得核心渲染器逻辑可以树摇
 // lazy create the renderer - this makes core renderer logic tree-shakable
+// 在用户只是从Vue导入reactivity工具的案例中
 // in case the user only imports reactivity utilities from Vue.
 let renderer: Renderer<Element> | HydrationRenderer
 
@@ -31,6 +34,7 @@ let enabledHydration = false
 
 // 获取渲染器
 function ensureRenderer() {
+  // 缓存渲染器 || 没有则创建
   return renderer || (renderer = createRenderer<Node, Element>(rendererOptions))
 }
 
@@ -51,20 +55,24 @@ export const hydrate = ((...args) => {
   ensureHydrationRenderer().hydrate(...args)
 }) as RootHydrateFunction
 
-// 创建app函数
+// 创建app 参数：配置选项
 export const createApp = ((...args) => {
-  // 渲染器创建app
+  // 渲染器中返回的创建app函数
   const app = ensureRenderer().createApp(...args)
 
   // 开发中
   if (__DEV__) {
-    // 注入原生标签检查
+    // 检查原生标签检查属性
     injectNativeTagCheck(app)
   }
 
   // 获取app的安装方法
   const { mount } = app
   // 重新改写安装方法
+  /**
+   * 容器对象或者选择器字符串
+   * @param containerOrSelector 
+   */
   app.mount = (containerOrSelector: Element | string): any => {
     // 获取挂载点的dom对象
     const container = normalizeContainer(containerOrSelector)
@@ -72,19 +80,19 @@ export const createApp = ((...args) => {
     if (!container) return
     // 获取app的根组件实例
     const component = app._component
-    // 非函数，没有render函数，没有template
+    // 非函数 && 没有render函数 && 没有template
     if (!isFunction(component) && !component.render && !component.template) {
       // 直接将挂载点中的html当作模板
       component.template = container.innerHTML
     }
     // clear content before mounting
-    // 安装前清空挂载店内容
+    // 安装前清空html容器中的内容
     container.innerHTML = ''
-    // 安装组件
+    // 开始安装组件
     const proxy = mount(container)
-    // 移除挂载店的v-cloak属性
+    // 移除挂载店的v-cloak属性,放置闪烁
     container.removeAttribute('v-cloak')
-    // 安装
+    
     return proxy
   }
 
@@ -111,7 +119,9 @@ export const createSSRApp = ((...args) => {
 }) as CreateAppFunction<Element>
 
 function injectNativeTagCheck(app: App) {
+  // 注入isNativeTag属性
   // Inject `isNativeTag`
+  // 这个被用来验证组件的名称
   // this is used for component name validation (dev only)
   Object.defineProperty(app.config, 'isNativeTag', {
     value: (tag: string) => isHTMLTag(tag) || isSVGTag(tag),
@@ -120,11 +130,11 @@ function injectNativeTagCheck(app: App) {
 }
 
 /**
- * 正规化dom节点
- * @param container 挂载的dom节点
+ * 标准化dom节点
+ * @param container 挂载的dom节点或者选择器字符串
  */
 function normalizeContainer(container: Element | string): Element | null {
-  // 字符串
+  // 是字符串,说明是选择器
   if (isString(container)) {
     // 转换为dom对象
     const res = document.querySelector(container)
@@ -132,10 +142,10 @@ function normalizeContainer(container: Element | string): Element | null {
     if (__DEV__ && !res) {
       warn(`Failed to mount app: mount target selector returned null.`)
     }
-    // 存在之际返回
+    // 获取的dom节点对象
     return res
   }
-  // 非字符串直接返回
+  // 非字符串,说明是dom节点对象,直接返回
   return container
 }
 

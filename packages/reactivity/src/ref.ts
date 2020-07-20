@@ -132,7 +132,7 @@ export function customRef<T>(factory: CustomRefFactory<T>): Ref<T> {
 }
 
 export function toRefs<T extends object>(object: T): ToRefs<T> {
- * 将对象进行ref化
+ /* 将对象进行ref化
  * @param object 
  */
   if (__DEV__ && !isProxy(object)) {

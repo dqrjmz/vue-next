@@ -259,6 +259,12 @@ const isElementRoot = (vnode: VNode) => {
   )
 }
 
+/**
+ * 应该更新组件
+ * @param prevVNode 前一个vnode
+ * @param nextVNode 后一个vnode
+ * @param optimized 是否优化
+ */
 export function shouldUpdateComponent(
   prevVNode: VNode,
   nextVNode: VNode,

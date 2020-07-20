@@ -86,7 +86,9 @@ export type Plugin =
   | {
       install: PluginInstallFunction
     }
-// 创建Vue实例
+/**
+ * 创建app上下文
+ */
 export function createAppContext(): AppContext {
   return {
     config: {
@@ -111,16 +113,24 @@ export type CreateAppFunction<HostElement> = (
   rootProps?: Data | null
 ) => App<HostElement>
 
+/**
+ * 创建app api
+ * @param render 渲染器
+ * @param hydrate 
+ */
 export function createAppAPI<HostElement>(
   render: RootRenderFunction,
   hydrate?: RootHydrateFunction
 ): CreateAppFunction<HostElement> {
-  /**
-   * 创建app
-   * 1.  
-   */
+ /**
+  * 用来创建app的原始函数(首次初始化,根组件,没有根属性)
+  * @param {Object} 根组件
+  * @Param 根属性
+  */
   return function createApp(rootComponent, rootProps = null) {
+    // 根属性!= null && 不是对象
     if (rootProps != null && !isObject(rootProps)) {
+      // 
       __DEV__ && warn(`root props passed to app.mount() must be an object.`)
       rootProps = null
     }
@@ -131,7 +141,7 @@ export function createAppAPI<HostElement>(
     const installedPlugins = new Set()
     // app没有被安装
     let isMounted = false
-
+    // 创建的app对象
     const app: App = {
       _component: rootComponent as Component,
       _props: rootProps,
@@ -221,10 +231,15 @@ export function createAppAPI<HostElement>(
         context.directives[name] = directive
         return app
       },
-
-      // 安装组件（根挂载点
+      /**
+       * 真正的安装组件函数
+       * @param rootContainer html中挂载节点
+       * @param isHydrate 
+       */
       mount(rootContainer: HostElement, isHydrate?: boolean): any {
+        // 没有被安装
         if (!isMounted) {
+          // 创建根组件的vnode
           const vnode = createVNode(rootComponent as Component, rootProps)
           // store app context on the root VNode.
           // this will be set on the root instance on initial mount.
@@ -240,6 +255,7 @@ export function createAppAPI<HostElement>(
           if (isHydrate && hydrate) {
             hydrate(vnode as VNode<Node, Element>, rootContainer as any)
           } else {
+            // 渲染vnode到html
             render(vnode, rootContainer)
           }
           // app已被安装
@@ -251,6 +267,7 @@ export function createAppAPI<HostElement>(
 
           return vnode.component!.proxy
         } else if (__DEV__) {
+          // 已经被安装过了 
           warn(
             `App has already been mounted.\n` +
               `If you want to remount the same app, move your app creation logic ` +

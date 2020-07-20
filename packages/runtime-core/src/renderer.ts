@@ -406,8 +406,21 @@ function baseCreateRenderer(
     insertStaticContent: hostInsertStaticContent
   } = options
 
+  // 注意: 函数内部的这个闭包应该使用函数表达式的风格为了阻止行内被修改
   // Note: functions inside this closure should use `const xxx = () => {}`
   // style in order to prevent being inlined by minifiers.
+
+  /**
+   * 补丁函数
+   * @param n1 老
+   * @param n2 新
+   * @param container 
+   * @param anchor 
+   * @param parentComponent 
+   * @param parentSuspense 
+   * @param isSVG 
+   * @param optimized 
+   */
   const patch: PatchFn = (
     n1,
     n2,
@@ -419,6 +432,7 @@ function baseCreateRenderer(
     optimized = false
   ) => {
     // patching & not same type, unmount old tree
+    // 新老vnode类型不同
     if (n1 && !isSameVNodeType(n1, n2)) {
       anchor = getNextHostNode(n1)
       unmount(n1, parentComponent, parentSuspense, true)
@@ -1104,6 +1118,17 @@ function baseCreateRenderer(
     }
   }
 
+  /**
+   * 处理组件
+   * @param n1 老
+   * @param n2 新
+   * @param container 容器对象(dom
+   * @param anchor 
+   * @param parentComponent 
+   * @param parentSuspense 
+   * @param isSVG 
+   * @param optimized 
+   */
   const processComponent = (
     n1: VNode | null,
     n2: VNode,
@@ -1124,6 +1149,7 @@ function baseCreateRenderer(
           optimized
         )
       } else {
+        // 安装组件
         mountComponent(
           n2,
           container,
@@ -1139,6 +1165,16 @@ function baseCreateRenderer(
     }
   }
 
+  /**
+   * 安装组件
+   * @param initialVNode 被安装的vnode
+   * @param container 
+   * @param anchor 
+   * @param parentComponent 父组件 
+   * @param parentSuspense 
+   * @param isSVG 
+   * @param optimized 
+   */
   const mountComponent: MountComponentFn = (
     initialVNode,
     container,
@@ -1210,9 +1246,16 @@ function baseCreateRenderer(
       endMeasure(instance, `mount`)
     }
   }
-
+  /**
+   * 更新组件
+   * @param n1 老vnode
+   * @param n2 新vnode
+   * @param optimized 
+   */
   const updateComponent = (n1: VNode, n2: VNode, optimized: boolean) => {
+    // 获取vnode的组件实例
     const instance = (n2.component = n1.component)!
+    // 应该更新组件
     if (shouldUpdateComponent(n1, n2, optimized)) {
       if (
         __FEATURE_SUSPENSE__ &&
@@ -1239,6 +1282,7 @@ function baseCreateRenderer(
         instance.update()
       }
     } else {
+      // 不需要更新 
       // no update needed. just copy over properties
       n2.component = n1.component
       n2.el = n1.el
@@ -1246,6 +1290,16 @@ function baseCreateRenderer(
     }
   }
 
+  /**
+   * 安装渲染效果
+   * @param instance 组件实例
+   * @param initialVNode 初始化vnode
+   * @param container html容器对象
+   * @param anchor 
+   * @param parentSuspense 
+   * @param isSVG 
+   * @param optimized 
+   */
   const setupRenderEffect: SetupRenderEffectFn = (
     instance,
     initialVNode,
@@ -2104,15 +2158,26 @@ function baseCreateRenderer(
     }
   }
 
+  /**
+   * 渲染函数
+   * @param vnode 虚拟节点
+   * @param container html中的容器元素
+   */
   const render: RootRenderFunction = (vnode, container) => {
+    // 没有vnode,说明是卸载
     if (vnode == null) {
+      // 容器元素有_vnode元素
       if (container._vnode) {
+        // 卸载
         unmount(container._vnode, null, null, true)
       }
     } else {
+      // 有vnode
+      // 直接补丁
       patch(container._vnode || null, vnode, container)
     }
     flushPostFlushCbs()
+    // 将根组件的vnode添加到_vnode属性
     container._vnode = vnode
   }
 
@@ -2139,8 +2204,10 @@ function baseCreateRenderer(
   }
 
   return {
+    // 渲染器
     render,
     hydrate,
+    // 创建app的函数
     createApp: createAppAPI(render, hydrate)
   }
 }

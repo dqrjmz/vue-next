@@ -1,17 +1,11 @@
 ﻿import { isObject, toRawType, def, hasOwn, makeMap } from '@vue/shared'
-// 不同情况下的代理处理
 import {
-  // 可变的
   mutableHandlers,
-  // 只读的
   readonlyHandlers,
-  // 浅响应式
   shallowReactiveHandlers,
-  // 浅只读
   shallowReadonlyHandlers
 } from './baseHandlers'
 import {
-  // 可变集合
   mutableCollectionHandlers,
   readonlyCollectionHandlers,
   shallowCollectionHandlers
@@ -37,22 +31,14 @@ interface Target {
 }
 
 const collectionTypes = new Set<Function>([Set, Map, WeakMap, WeakSet])
-// 是否是可观察类型
 const isObservableType = /*#__PURE__*/ makeMap(
   'Object,Array,Map,Set,WeakMap,WeakSet'
 )
 
 const canObserve = (value: Target): boolean => {
- * 可观察
- * @param value 代理的目标对象
- */
   return (
     !value[ReactiveFlags.SKIP] &&
-    // 值不是vnode
-    // 能够被观察（可代理
     isObservableType(toRawType(value)) &&
-    // 不再其中
-    // 对像没有被冻结
     !Object.isFrozen(value)
   )
 }
@@ -61,17 +47,11 @@ const canObserve = (value: Target): boolean => {
 type UnwrapNestedRefs<T> = T extends Ref ? T : UnwrapRef<T>
 
 export function reactive<T extends object>(target: T): UnwrapNestedRefs<T>
-/**
- * 
- * @param target 目标对象
- */
 export function reactive(target: object) {
   // if trying to observe a readonly proxy, return the readonly version.
   if (target && (target as Target)[ReactiveFlags.IS_READONLY]) {
-    // 直接返回
     return target
   }
-  // 创建响应式对象
   return createReactiveObject(
     target,
     false,
@@ -92,10 +72,10 @@ export function shallowReactive<T extends object>(target: T): T {
   )
 }
 
-/**
- * 将对象设置为只读
- * @param target 目标对象
- */
+type Primitive = string | number | boolean | bigint | symbol | undefined | null
+type Builtin = Primitive | Function | Date | Error | RegExp
+export type DeepReadonly<T> = T extends Builtin
+  ? T
   : T extends Map<infer K, infer V>
     ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
     : T extends ReadonlyMap<infer K, infer V>
@@ -140,28 +120,16 @@ export function shallowReadonly<T extends object>(
   )
 }
 
-/**
- * 
- * @param target 目标对象
- * @param toProxy 代理对象集合
- * @param toRaw 目标对象集合
- * @param baseHandlers 基础对象处理（根据不同情况传入不同的代理函数
- * @param collectionHandlers 集合对象处理
- */
 function createReactiveObject(
   target: Target,
   isReadonly: boolean,
   baseHandlers: ProxyHandler<any>,
   collectionHandlers: ProxyHandler<any>
 ) {
-  // 不是一个object类型，非null的,typeof的object
   if (!isObject(target)) {
-    // 开发中
     if (__DEV__) {
-      // 警告： 值不能被做成响应式
       console.warn(`value cannot be made reactive: ${String(target)}`)
     }
-    // 直接返回
     return target
   }
   // target is already a Proxy, return it.
@@ -170,8 +138,6 @@ function createReactiveObject(
     target[ReactiveFlags.RAW] &&
     !(isReadonly && target[ReactiveFlags.IS_REACTIVE])
   ) {
-  // 目标对象已经是一个代理
-    // 直接返回
     return target
   }
   // target already has corresponding Proxy
@@ -183,9 +149,7 @@ function createReactiveObject(
       : target[ReactiveFlags.REACTIVE]
   }
   // only a whitelist of value types can be observed.
-  // 只有一个值的白名单类型能够被观察
   if (!canObserve(target)) {
-    // 不能被观察直接返回
     return target
   }
   const observed = new Proxy(
@@ -197,35 +161,31 @@ function createReactiveObject(
     isReadonly ? ReactiveFlags.READONLY : ReactiveFlags.REACTIVE,
     observed
   )
-  // 缓存下来
-  // 代理对象
-  // 原始对象
-  // 返回目标对象的代理对象
   return observed
 }
 
-/**
- * 对象是否为响应式对象
- * @param value 
- */
 export function isReactive(value: unknown): boolean {
+  // 是否只读
   if (isReadonly(value)) {
     return isReactive((value as Target)[ReactiveFlags.RAW])
   }
   return !!(value && (value as Target)[ReactiveFlags.IS_REACTIVE])
 }
 
-// 是否为只读对象
 export function isReadonly(value: unknown): boolean {
+  // value存在 && 
   return !!(value && (value as Target)[ReactiveFlags.IS_READONLY])
 }
 
-// 是代理对象
+/**
+ * 是否是代理对象
+ * @param value 
+ */
 export function isProxy(value: unknown): boolean {
+  // 是否是响应式对象 || 只读属性
   return isReactive(value) || isReadonly(value)
 }
 
-// 是原始值
 export function toRaw<T>(observed: T): T {
   return (
     (observed && toRaw((observed as Target)[ReactiveFlags.RAW])) || observed
