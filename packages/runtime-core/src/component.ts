@@ -485,11 +485,17 @@ export function setupComponent(
   return setupResult
 }
 
+/**
+ * 安装有状态组件
+ * @param instance 
+ * @param isSSR 
+ */
 function setupStatefulComponent(
   instance: ComponentInternalInstance,
   isSSR: boolean
 ) {
-  const Component = instance.type as ComponentOptions //组件实例
+  // 组件实例的type属性
+  const Component = instance.type as ComponentOptions 
 
   if (__DEV__) {
     if (Component.name) {
@@ -508,8 +514,10 @@ function setupStatefulComponent(
       }
     }
   }
+  // 通过缓存创建渲染代理属性
   // 0. create render proxy property access cache
   instance.accessCache = {}
+  // 创建公共实例/渲染代理,还标记他,所以他不会被观察
   // 1. create public instance / render proxy
   // also mark it raw so it's never observed
   instance.proxy = new Proxy(instance.ctx, PublicInstanceProxyHandlers)
@@ -528,11 +536,13 @@ function setupStatefulComponent(
       setup,
       instance,
       ErrorCodes.SETUP_FUNCTION,
+      // 组件的props属性
       [__DEV__ ? shallowReadonly(instance.props) : instance.props, setupContext]
     )
     resetTracking()
+    // 当前组件
     currentInstance = null
-
+      // 是Promise类型数据
     if (isPromise(setupResult)) {
       if (isSSR) {
         // return the promise so server-renderer can wait on it
@@ -544,6 +554,7 @@ function setupStatefulComponent(
         // bail here and wait for re-entry.
         instance.asyncDep = setupResult
       } else if (__DEV__) {
+        // setup不支持返回Promise
         warn(
           `setup() returned a Promise, but the version of Vue you are using ` +
             `does not support it yet.`
@@ -557,16 +568,27 @@ function setupStatefulComponent(
   }
 }
 
+/**
+ * 处理setupResult
+ * @param instance 组件实例 
+ * @param setupResult setupResult数据
+ * @param isSSR 
+ */
 export function handleSetupResult(
   instance: ComponentInternalInstance,
   setupResult: unknown,
   isSSR: boolean
 ) {
+  // 返回的是函数
   if (isFunction(setupResult)) {
     // setup returned an inline render function
+    // 当作组件的render函数
     instance.render = setupResult as InternalRenderFunction
+    // 是对象
   } else if (isObject(setupResult)) {
+    // 是vnode
     if (__DEV__ && isVNode(setupResult)) {
+      // 不应该直接返回vnode,应该返回一个渲染函数
       warn(
         `setup() should not return VNodes directly - ` +
           `return a render function instead.`
@@ -574,6 +596,7 @@ export function handleSetupResult(
     }
     // setup returned bindings.
     // assuming a render function compiled from template is present.
+    // 
     instance.setupState = reactive(setupResult)
     if (__DEV__) {
       exposeSetupStateOnRenderContext(instance)
@@ -585,6 +608,7 @@ export function handleSetupResult(
       }`
     )
   }
+  // 完成组件安装
   finishComponentSetup(instance, isSSR)
 }
 
@@ -596,6 +620,7 @@ type CompileFunction = (
 let compile: CompileFunction | undefined
 
 /**
+ * 给runtime-dom用来注册编译器的
  * For runtime-dom to register the compiler.
  * Note the exported method uses any to avoid d.ts relying on the compiler types.
  */
@@ -603,10 +628,16 @@ export function registerRuntimeCompiler(_compile: any) {
   compile = _compile
 }
 
+/**
+ * 完成组件安装
+ * @param instance 组件实例
+ * @param isSSR 
+ */
 function finishComponentSetup(
   instance: ComponentInternalInstance,
   isSSR: boolean
 ) {
+  // 获取组件选项参数
   const Component = instance.type as ComponentOptions
 
   // template / render function normalization
@@ -614,14 +645,20 @@ function finishComponentSetup(
     if (Component.render) {
       instance.render = Component.render as InternalRenderFunction
     }
+    // 没有渲染函数
   } else if (!instance.render) {
+    // 编译函数存在 && 组件模板存在 && 组件配置选项中没有render
     if (compile && Component.template && !Component.render) {
+      // 开始测量性能
       if (__DEV__) {
         startMeasure(instance, `compile`)
       }
+      // 开始编译,编译出来render function
       Component.render = compile(Component.template, {
+        // 自定义元素
         isCustomElement: instance.appContext.config.isCustomElement || NO
       })
+
       if (__DEV__) {
         endMeasure(instance, `compile`)
       }
@@ -648,11 +685,13 @@ function finishComponentSetup(
       }
     }
 
+    // 给组件render属性赋值为render 函数
     instance.render = (Component.render || NOOP) as InternalRenderFunction
 
     // for runtime-compiled render functions using `with` blocks, the render
     // proxy used needs a different `has` handler which is more performant and
     // also only allows a whitelist of globals to fallthrough.
+    // 还只允许全局白名单
     if (instance.render._rc) {
       instance.withProxy = new Proxy(
         instance.ctx,
@@ -667,6 +706,8 @@ function finishComponentSetup(
     applyOptions(instance, Component)
     currentInstance = null
   }
+
+  console.log(instance);
 }
 
 const attrHandlers: ProxyHandler<Data> = {

@@ -44,7 +44,7 @@ export { defineComponent } from './apiDefineComponent'
 export { defineAsyncComponent } from './apiAsyncComponent'
 
 // Advanced API ----------------------------------------------------------------
-
+// 为了在setup()中获取内部实例 对于高级有用的
 // For getting a hold of the internal instance in setup() - useful for advanced
 // plugins
 export { getCurrentInstance } from './component'

@@ -60,8 +60,8 @@ export type ErrorTypes = LifecycleHooks | ErrorCodes
 
 /**
  * 调用钩子函数，使用异常处理
- * @param fn 钩子函数
- * @param instance 对象实例
+ * @param fn setup
+ * @param instance 组件实例
  * @param type 错误类型
  * @param args 
  */
@@ -73,6 +73,7 @@ export function callWithErrorHandling(
 ) {
   let res
   try {
+    // props属性
     res = args ? fn(...args) : fn()
   } catch (err) {
     handleError(err, instance, type)
