@@ -1,4 +1,4 @@
-import { effect, ReactiveEffect, trigger, track } from './effect'
+﻿import { effect, ReactiveEffect, trigger, track } from './effect'
 import { TriggerOpTypes, TrackOpTypes } from './operations'
 import { Ref } from './ref'
 import { isFunction, NOOP } from '@vue/shared'
@@ -51,8 +51,6 @@ export function computed<T>(
 
   const runner = effect(getter, {
     lazy: true,
-    // mark effect as computed so that it gets priority during trigger
-    computed: true,
     scheduler: () => {
       if (!dirty) {
         dirty = true
@@ -62,8 +60,7 @@ export function computed<T>(
   })
   // 计算属性，只返回value不设置值，暴露给用户自定修改
   computed = {
-    // 是一个ref对象
-    _isRef: true,
+    __v_isRef: true,
     // expose effect so computed can be stopped
     effect: runner,
     // 有get,set

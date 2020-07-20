@@ -25,7 +25,7 @@
       "name": "Jest",
       "type": "node",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/jest.js",
+      "program": "${workspaceFolder}/node_modules/.bin/jest",
       "stopOnEntry": false,
       "args": ["${fileBasename}", "--runInBand", "--detectOpenHandles"],
       "cwd": "${workspaceFolder}",
@@ -36,7 +36,10 @@
         "NODE_ENV": "development"
       },
       "console": "integratedTerminal",
-      "sourceMaps": true
+      "sourceMaps": true,
+      "windows": {
+        "program": "${workspaceFolder}/node_modules/jest/bin/jest",
+      }
     }
   ]
 }

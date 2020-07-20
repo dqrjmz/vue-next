@@ -1,4 +1,4 @@
-import { ErrorCodes, callWithErrorHandling } from './errorHandling'
+﻿import { ErrorCodes, callWithErrorHandling } from './errorHandling'
 import { isArray } from '@vue/shared'
 
 // 工作实例类型
@@ -18,7 +18,9 @@ const p = Promise.resolve()
 let isFlushing = false
 // 没有刷新等待中
 let isFlushPending = false
-// 递归限制深度
+let flushIndex = 0
+let pendingPostFlushCbs: Function[] | null = null
+let pendingPostFlushIndex = 0
 const RECURSION_LIMIT = 100
 type CountMap = Map<Job | Function, number>
 
@@ -29,8 +31,7 @@ export function nextTick(fn?: () => void): Promise<void> {
 
 // 队列工作
 export function queueJob(job: Job) {
-  // 队列中不包含此工作
-  if (!queue.includes(job)) {
+  if (!queue.includes(job, flushIndex)) {
     // 添加到队列
     queue.push(job)
     // 刷新队列
@@ -54,10 +55,16 @@ export function invalidateJob(job: Job) {
 export function queuePostFlushCb(cb: Function | Function[]) {
   // 回调不是数组
   if (!isArray(cb)) {
-    // 直接添加到回调刷新队列
-    postFlushCbs.push(cb)
+    if (
+      !pendingPostFlushCbs ||
+      !pendingPostFlushCbs.includes(cb, pendingPostFlushIndex)
+    ) {
+      postFlushCbs.push(cb)
+    }
   } else {
-    // 数组，展开后添加
+    // if cb is an array, it is a component lifecycle hook which can only be
+    // triggered by a job, which is already deduped in the main queue, so
+    // we can skip dupicate check here to improve perf
     postFlushCbs.push(...cb)
   }
   // 刷新队列
@@ -77,8 +84,7 @@ function queueFlush() {
 export function flushPostFlushCbs(seen?: CountMap) {
   // 刷新回调的数组不为空
   if (postFlushCbs.length) {
-    // 去重，展开
-    const cbs = [...new Set(postFlushCbs)]
+    pendingPostFlushCbs = [...new Set(postFlushCbs)]
     // 设置数组为空
     postFlushCbs.length = 0
     // 开发中
@@ -86,16 +92,18 @@ export function flushPostFlushCbs(seen?: CountMap) {
       // 创建哈希表
       seen = seen || new Map()
     }
-    // 遍历回调
-    for (let i = 0; i < cbs.length; i++) {
-      // 开发中
+    for (
+      pendingPostFlushIndex = 0;
+      pendingPostFlushIndex < pendingPostFlushCbs.length;
+      pendingPostFlushIndex++
+    ) {
       if (__DEV__) {
-        // 查看递归更新
-        checkRecursiveUpdates(seen!, cbs[i])
+        checkRecursiveUpdates(seen!, pendingPostFlushCbs[pendingPostFlushIndex])
       }
-      // 调用回调
-      cbs[i]()
+      pendingPostFlushCbs[pendingPostFlushIndex]()
     }
+    pendingPostFlushCbs = null
+    pendingPostFlushIndex = 0
   }
 }
 
@@ -107,7 +115,6 @@ function flushJobs(seen?: CountMap) {
   isFlushPending = false
   // 正在刷新中
   isFlushing = true
-  let job
   if (__DEV__) {
     seen = seen || new Map()
   }
@@ -128,21 +135,21 @@ function flushJobs(seen?: CountMap) {
   // during execution of another flushed job.
   queue.sort((a, b) => getId(a!) - getId(b!))
 
-  // 开始出队列
-  while ((job = queue.shift()) !== undefined) {
-    // 工作为null，直接返回
-    if (job === null) {
-      continue
-    }
+  for (flushIndex = 0; flushIndex < queue.length; flushIndex++) {
+    const job = queue[flushIndex]
+    if (job) {
     // 开发中
-    if (__DEV__) {
+      if (__DEV__) {
       // 检查递归更新
-      checkRecursiveUpdates(seen!, job)
-    }
+        checkRecursiveUpdates(seen!, job)
+      }
     // 使用错误处理
-    callWithErrorHandling(job, null, ErrorCodes.SCHEDULER)
+      callWithErrorHandling(job, null, ErrorCodes.SCHEDULER)
+    }
   }
-  // 刷新
+  flushIndex = 0
+  queue.length = 0
+
   flushPostFlushCbs(seen)
   // 没有刷新
   isFlushing = false

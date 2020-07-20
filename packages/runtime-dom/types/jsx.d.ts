@@ -1,4 +1,5 @@
-import { Ref, ComponentPublicInstance } from '@vue/runtime-core'
+// Note: this file is auto concatenated to the end of the bundled d.ts during
+// build.
 
 // This code is based on react definition in DefinitelyTyped published under the MIT license.
 //      Repository: https://github.com/DefinitelyTyped/DefinitelyTyped
@@ -1304,9 +1305,16 @@ type EventHandlers<E> = {
   [K in StringKeyOf<E>]?: E[K] extends Function ? E[K] : (payload: E[K]) => void
 }
 
+// use namespace import to avoid collision with generated types which use
+// named imports.
+import * as RuntimeCore from '@vue/runtime-core'
+
 type ReservedProps = {
   key?: string | number
-  ref?: string | Ref | ((ref: Element | ComponentPublicInstance | null) => void)
+  ref?:
+    | string
+    | RuntimeCore.Ref
+    | ((ref: Element | RuntimeCore.ComponentInternalInstance | null) => void)
 }
 
 type ElementAttrs<T> = T & EventHandlers<Events> & ReservedProps
@@ -1328,8 +1336,10 @@ declare global {
     }
     interface IntrinsicElements extends NativeElements {
       // allow arbitrary elements
+      // @ts-ignore supress ts:2374 = Duplicate string index signature.
       [name: string]: any
     }
+    interface IntrinsicAttributes extends ReservedProps {}
   }
 }
 

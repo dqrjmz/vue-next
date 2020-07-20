@@ -7,7 +7,15 @@ import {
   KeepAlive,
   serializeInner,
   nextTick,
-  ComponentOptions
+  ComponentOptions,
+  markRaw,
+  inject,
+  defineComponent,
+  ComponentPublicInstance,
+  Ref,
+  cloneVNode,
+  provide,
+  withScopeId
 } from '@vue/runtime-test'
 import { KeepAliveProps } from '../../src/components/KeepAlive'
 
@@ -558,5 +566,120 @@ describe('KeepAlive', () => {
       await nextTick()
       expect(serializeInner(root)).toBe(`1`)
     })
+  })
+
+  it('should call correct vnode hooks', async () => {
+    const Foo = markRaw({
+      name: 'Foo',
+      render() {
+        return h('Foo')
+      }
+    })
+    const Bar = markRaw({
+      name: 'Bar',
+      render() {
+        return h('Bar')
+      }
+    })
+
+    const spyMounted = jest.fn()
+    const spyUnmounted = jest.fn()
+
+    const RouterView = defineComponent({
+      setup(_, { slots }) {
+        const Component = inject<Ref<ComponentPublicInstance>>('component')
+        const refView = ref()
+
+        let componentProps = {
+          ref: refView,
+          onVnodeMounted() {
+            spyMounted()
+          },
+          onVnodeUnmounted() {
+            spyUnmounted()
+          }
+        }
+
+        return () => {
+          const child: any = slots.default!({
+            Component: Component!.value
+          })[0]
+
+          const innerChild = child.children[0]
+          child.children[0] = cloneVNode(innerChild, componentProps)
+          return child
+        }
+      }
+    })
+
+    let toggle: () => void = () => {}
+
+    const App = defineComponent({
+      setup() {
+        const component = ref(Foo)
+
+        provide('component', component)
+
+        toggle = () => {
+          component.value = component.value === Foo ? Bar : Foo
+        }
+        return {
+          component,
+          toggle
+        }
+      },
+      render() {
+        return h(RouterView, null, {
+          default: ({ Component }: any) => h(KeepAlive, null, [h(Component)])
+        })
+      }
+    })
+
+    render(h(App), root)
+    await nextTick()
+    expect(spyMounted).toHaveBeenCalledTimes(1)
+    expect(spyUnmounted).toHaveBeenCalledTimes(0)
+
+    toggle()
+    await nextTick()
+
+    expect(spyMounted).toHaveBeenCalledTimes(2)
+    expect(spyUnmounted).toHaveBeenCalledTimes(1)
+
+    toggle()
+    await nextTick()
+    expect(spyMounted).toHaveBeenCalledTimes(3)
+    expect(spyUnmounted).toHaveBeenCalledTimes(2)
+
+    render(null, root)
+    await nextTick()
+    expect(spyMounted).toHaveBeenCalledTimes(3)
+    expect(spyUnmounted).toHaveBeenCalledTimes(4)
+  })
+
+  // #1513
+  test('should work with cloned root due to scopeId / fallthrough attrs', async () => {
+    const viewRef = ref('one')
+    const instanceRef = ref<any>(null)
+    const withId = withScopeId('foo')
+    const App = {
+      __scopeId: 'foo',
+      render: withId(() => {
+        return h(KeepAlive, null, {
+          default: () => h(views[viewRef.value], { ref: instanceRef })
+        })
+      })
+    }
+    render(h(App), root)
+    expect(serializeInner(root)).toBe(`<div foo>one</div>`)
+    instanceRef.value.msg = 'changed'
+    await nextTick()
+    expect(serializeInner(root)).toBe(`<div foo>changed</div>`)
+    viewRef.value = 'two'
+    await nextTick()
+    expect(serializeInner(root)).toBe(`<div foo>two</div>`)
+    viewRef.value = 'one'
+    await nextTick()
+    expect(serializeInner(root)).toBe(`<div foo>changed</div>`)
   })
 })

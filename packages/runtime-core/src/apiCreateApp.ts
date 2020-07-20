@@ -13,8 +13,11 @@ import { isFunction, NO, isObject } from '@vue/shared'
 import { warn } from './warning'
 import { createVNode, cloneVNode, VNode } from './vnode'
 import { RootHydrateFunction } from './hydration'
+import { initApp, appUnmounted } from './devtools'
+import { version } from '.'
 
 export interface App<HostElement = any> {
+  version: string
   config: AppConfig
   use(plugin: Plugin, ...options: any[]): this
   mixin(mixin: ComponentOptions): this
@@ -29,7 +32,7 @@ export interface App<HostElement = any> {
   unmount(rootContainer: HostElement | string): void
   provide<T>(key: InjectionKey<T> | string, value: T): this
 
-  // internal. We need to expose these for the server-renderer
+  // internal. We need to expose these for the server-renderer and devtools
   _component: Component
   _props: Data | null
   _container: HostElement | null
@@ -71,6 +74,9 @@ export interface AppContext {
   directives: Record<string, Directive>
   provides: Record<string | symbol, any>
   reload?: () => void // HMR only
+
+  // internal for devtools
+  __app?: App
 }
 
 type PluginInstallFunction = (app: App, ...options: any[]) => any
@@ -132,6 +138,8 @@ export function createAppAPI<HostElement>(
       _container: null,
       // app的上下文
       _context: context,
+
+      version,
 
       get config() {
         // 获取app的配置
@@ -238,10 +246,16 @@ export function createAppAPI<HostElement>(
           isMounted = true
           // 在app上添加_container属性作为 根挂载点的引用
           app._container = rootContainer
+
+          __DEV__ && initApp(app, version)
+
           return vnode.component!.proxy
         } else if (__DEV__) {
           warn(
-            `App has already been mounted. Create a new app instance instead.`
+            `App has already been mounted.\n` +
+              `If you want to remount the same app, move your app creation logic ` +
+              `into a factory function and create fresh app instances for each ` +
+              `mount - e.g. \`const createMyApp = () => createApp(App)\``
           )
         }
       },
@@ -250,6 +264,8 @@ export function createAppAPI<HostElement>(
       unmount() {
         if (isMounted) {
           render(null, app._container)
+
+          __DEV__ && appUnmounted(app)
         } else if (__DEV__) {
           warn(`Cannot unmount an app that is not mounted.`)
         }
@@ -258,7 +274,7 @@ export function createAppAPI<HostElement>(
       provide(key, value) {
         if (__DEV__ && key in context.provides) {
           warn(
-            `App already provides property with key "${key}". ` +
+            `App already provides property with key "${String(key)}". ` +
               `It will be overwritten with the new value.`
           )
         }
@@ -269,6 +285,8 @@ export function createAppAPI<HostElement>(
         return app
       }
     }
+
+    context.__app = app
 
     return app
   }

@@ -1,7 +1,10 @@
 // __UNSAFE__
 // Reason: potentially setting innerHTML.
 // This can come from explicit usage of v-html or innerHTML as a prop in render
-// functions. The user is reponsible for using them with only trusted content.
+
+import { warn } from '@vue/runtime-core'
+
+// functions. The user is responsible for using them with only trusted content.
 export function patchDOMProp(
   el: any,
   key: string,
@@ -31,7 +34,22 @@ export function patchDOMProp(
   if (value === '' && typeof el[key] === 'boolean') {
     // e.g. <select multiple> compiles to { multiple: '' }
     el[key] = true
+  } else if (value == null && typeof el[key] === 'string') {
+    // e.g. <div :id="null">
+    el[key] = ''
+    el.removeAttribute(key)
   } else {
-    el[key] = value == null ? '' : value
+    // some properties perform value validation and throw
+    try {
+      el[key] = value
+    } catch (e) {
+      if (__DEV__) {
+        warn(
+          `Failed setting prop "${key}" on <${el.tagName.toLowerCase()}>: ` +
+            `value ${value} is invalid.`,
+          e
+        )
+      }
+    }
   }
 }

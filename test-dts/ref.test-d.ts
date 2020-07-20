@@ -1,5 +1,4 @@
-import { expectType } from 'tsd'
-import { Ref, ref, isRef, unref } from './index'
+import { Ref, ref, isRef, unref, reactive, expectType } from './index'
 
 function plainType(arg: number | Ref<number>) {
   // ref coercing
@@ -42,6 +41,23 @@ function plainType(arg: number | Ref<number>) {
   expectType<Ref<IteratorFoo | null | undefined>>(
     ref<IteratorFoo | null | undefined>()
   )
+
+  // should not unwrap ref inside arrays
+  const arr = ref([1, new Map<string, any>(), ref('1')]).value
+  const value = arr[0]
+  if (isRef(value)) {
+    expectType<Ref>(value)
+  } else if (typeof value === 'number') {
+    expectType<number>(value)
+  } else {
+    // should narrow down to Map type
+    // and not contain any Ref type
+    expectType<Map<string, any>>(value)
+  }
+
+  // should still unwrap in objects nested in arrays
+  const arr2 = ref([{ a: ref(1) }]).value
+  expectType<number>(arr2[0].a)
 }
 
 plainType(1)
@@ -60,11 +76,13 @@ function bailType(arg: HTMLElement | Ref<HTMLElement>) {
   expectType<HTMLElement>(unref(arg))
 
   // ref inner type should be unwrapped
+  // eslint-disable-next-line no-restricted-globals
   const nestedRef = ref({ foo: ref(document.createElement('DIV')) })
 
   expectType<Ref<{ foo: HTMLElement }>>(nestedRef)
   expectType<{ foo: HTMLElement }>(nestedRef.value)
 }
+// eslint-disable-next-line no-restricted-globals
 const el = document.createElement('DIV')
 bailType(el)
 
@@ -84,3 +102,12 @@ function withSymbol() {
 }
 
 withSymbol()
+
+const state = reactive({
+  foo: {
+    value: 1,
+    label: 'bar'
+  }
+})
+
+expectType<string>(state.foo.label)

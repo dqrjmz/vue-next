@@ -6,7 +6,13 @@ import {
   warn
 } from '@vue/runtime-core'
 import { addEventListener } from '../modules/events'
-import { isArray, looseEqual, looseIndexOf, invokeArrayFns } from '@vue/shared'
+import {
+  isArray,
+  looseEqual,
+  looseIndexOf,
+  invokeArrayFns,
+  toNumber
+} from '@vue/shared'
 
 type AssignerFn = (value: any) => void
 
@@ -33,11 +39,6 @@ function trigger(el: HTMLElement, type: string) {
   el.dispatchEvent(e)
 }
 
-function toNumber(val: string): number | string {
-  const n = parseFloat(val)
-  return isNaN(n) ? val : n
-}
-
 type ModelDirective<T> = ObjectDirective<T & { _assign: AssignerFn }>
 
 // We are exporting the v-model runtime directly as vnode hooks so that it can
@@ -46,10 +47,11 @@ export const vModelText: ModelDirective<
   HTMLInputElement | HTMLTextAreaElement
 > = {
   beforeMount(el, { value, modifiers: { lazy, trim, number } }, vnode) {
-    el.value = value
+    el.value = value == null ? '' : value
     el._assign = getModelAssigner(vnode)
     const castToNumber = number || el.type === 'number'
-    addEventListener(el, lazy ? 'change' : 'input', () => {
+    addEventListener(el, lazy ? 'change' : 'input', e => {
+      if ((e.target as any).composing) return
       let domValue: string | number = el.value
       if (trim) {
         domValue = domValue.trim()
@@ -73,11 +75,8 @@ export const vModelText: ModelDirective<
       addEventListener(el, 'change', onCompositionEnd)
     }
   },
-  beforeUpdate(el, { value, oldValue, modifiers: { trim, number } }, vnode) {
+  beforeUpdate(el, { value, modifiers: { trim, number } }, vnode) {
     el._assign = getModelAssigner(vnode)
-    if (value === oldValue) {
-      return
-    }
     if (document.activeElement === el) {
       if (trim && el.value.trim() === value) {
         return
@@ -86,7 +85,7 @@ export const vModelText: ModelDirective<
         return
       }
     }
-    el.value = value
+    el.value = value == null ? '' : value
   }
 }
 

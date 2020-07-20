@@ -43,10 +43,11 @@ import {
   findProp,
   isCoreComponent,
   isBindKey,
-  findDir
+  findDir,
+  isStaticExp
 } from '../utils'
 import { buildSlots } from './vSlot'
-import { isStaticNode } from './hoistStatic'
+import { getStaticType } from './hoistStatic'
 
 // some directive transforms (e.g. v-model) may return a symbol for runtime
 // import, which should be used instead of a resolveDirective call.
@@ -156,7 +157,7 @@ export const transformElement: NodeTransform = (node, context) => {
         const hasDynamicTextChild =
           type === NodeTypes.INTERPOLATION ||
           type === NodeTypes.COMPOUND_EXPRESSION
-        if (hasDynamicTextChild && !isStaticNode(child)) {
+        if (hasDynamicTextChild && !getStaticType(child)) {
           patchFlag |= PatchFlags.TEXT
         }
         // pass directly if the only child is a text node
@@ -203,7 +204,7 @@ export const transformElement: NodeTransform = (node, context) => {
       vnodeDynamicProps,
       vnodeDirectives,
       !!shouldUseBlock,
-      false /* isForBlock */,
+      false /* disableTracking */,
       node.loc
     )
   }
@@ -275,12 +276,12 @@ export function buildProps(
   const dynamicPropNames: string[] = []
 
   const analyzePatchFlag = ({ key, value }: Property) => {
-    if (key.type === NodeTypes.SIMPLE_EXPRESSION && key.isStatic) {
+    if (isStaticExp(key)) {
       const name = key.content
       if (
         !isComponent &&
         isOn(name) &&
-        // omit the flag for click handlers becaues hydration gives click
+        // omit the flag for click handlers because hydration gives click
         // dedicated fast path.
         name.toLowerCase() !== 'onclick' &&
         // omit v-model handlers
@@ -292,7 +293,7 @@ export function buildProps(
         value.type === NodeTypes.JS_CACHE_EXPRESSION ||
         ((value.type === NodeTypes.SIMPLE_EXPRESSION ||
           value.type === NodeTypes.COMPOUND_EXPRESSION) &&
-          isStaticNode(value))
+          getStaticType(value) > 0)
       ) {
         // skip if the prop is a cached handler or has constant value
         return

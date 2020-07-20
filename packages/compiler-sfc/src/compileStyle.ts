@@ -1,5 +1,10 @@
-// const postcss = require('postcss')
-import postcss, { ProcessOptions, LazyResult, Result, ResultMap } from 'postcss'
+import postcss, {
+  ProcessOptions,
+  LazyResult,
+  Result,
+  ResultMap,
+  ResultMessage
+} from 'postcss'
 import trimPlugin from './stylePluginTrim'
 import scopedPlugin from './stylePluginScoped'
 import {
@@ -16,15 +21,31 @@ export interface SFCStyleCompileOptions {
   id: string
   map?: RawSourceMap
   scoped?: boolean
+  vars?: boolean
   trim?: boolean
   preprocessLang?: PreprocessLang
   preprocessOptions?: any
+  preprocessCustomRequire?: (id: string) => any
   postcssOptions?: any
   postcssPlugins?: any[]
 }
 
 export interface SFCAsyncStyleCompileOptions extends SFCStyleCompileOptions {
   isAsync?: boolean
+  // css modules support, note this requires async so that we can get the
+  // resulting json
+  modules?: boolean
+  // maps to postcss-modules options
+  // https://github.com/css-modules/postcss-modules
+  modulesOptions?: {
+    scopeBehaviour?: 'global' | 'local'
+    globalModulePaths?: string[]
+    generateScopedName?:
+      | string
+      | ((name: string, filename: string, css: string) => string)
+    hashPrefix?: string
+    localsConvention?: 'camelCase' | 'camelCaseOnly' | 'dashes' | 'dashesOnly'
+  }
 }
 
 export interface SFCStyleCompileResults {
@@ -32,6 +53,8 @@ export interface SFCStyleCompileResults {
   map: RawSourceMap | undefined
   rawResult: LazyResult | Result | undefined
   errors: Error[]
+  modules?: Record<string, string>
+  dependencies: Set<string>
 }
 
 export function compileStyle(
@@ -44,7 +67,7 @@ export function compileStyle(
 }
 
 export function compileStyleAsync(
-  options: SFCStyleCompileOptions
+  options: SFCAsyncStyleCompileOptions
 ): Promise<SFCStyleCompileResults> {
   return doCompileStyle({ ...options, isAsync: true }) as Promise<
     SFCStyleCompileResults
@@ -57,8 +80,11 @@ export function doCompileStyle(
   const {
     filename,
     id,
-    scoped = true,
+    scoped = false,
+    vars = false,
     trim = true,
+    modules = false,
+    modulesOptions = {},
     preprocessLang,
     postcssOptions,
     postcssPlugins
@@ -73,7 +99,28 @@ export function doCompileStyle(
     plugins.push(trimPlugin())
   }
   if (scoped) {
-    plugins.push(scopedPlugin(id))
+    plugins.push(scopedPlugin({ id, vars }))
+  }
+  let cssModules: Record<string, string> | undefined
+  if (modules) {
+    if (__GLOBAL__ || __ESM_BROWSER__) {
+      throw new Error(
+        '[@vue/compiler-sfc] `modules` option is not supported in the browser build.'
+      )
+    }
+    if (!options.isAsync) {
+      throw new Error(
+        '[@vue/compiler-sfc] `modules` option can only be used with compileStyleAsync().'
+      )
+    }
+    plugins.push(
+      require('postcss-modules')({
+        ...modulesOptions,
+        getJSON: (_cssFileName: string, json: Record<string, string>) => {
+          cssModules = json
+        }
+      })
+    )
   }
 
   const postCSSOptions: ProcessOptions = {
@@ -92,10 +139,26 @@ export function doCompileStyle(
   let result: LazyResult | undefined
   let code: string | undefined
   let outMap: ResultMap | undefined
+  // stylus output include plain css. so need remove the repeat item
+  const dependencies = new Set(
+    preProcessedSource ? preProcessedSource.dependencies : []
+  )
+  // sass has filename self when provided filename option
+  dependencies.delete(filename)
 
   const errors: Error[] = []
   if (preProcessedSource && preProcessedSource.errors.length) {
     errors.push(...preProcessedSource.errors)
+  }
+
+  const recordPlainCssDependencies = (messages: ResultMessage[]) => {
+    messages.forEach(msg => {
+      if (msg.type === 'dependency') {
+        // postcss output path is absolute position path
+        dependencies.add(msg.file)
+      }
+    })
+    return dependencies
   }
 
   try {
@@ -108,16 +171,20 @@ export function doCompileStyle(
           code: result.css || '',
           map: result.map && (result.map.toJSON() as any),
           errors,
-          rawResult: result
+          modules: cssModules,
+          rawResult: result,
+          dependencies: recordPlainCssDependencies(result.messages)
         }))
         .catch(error => ({
           code: '',
           map: undefined,
           errors: [...errors, error],
-          rawResult: undefined
+          rawResult: undefined,
+          dependencies
         }))
     }
 
+    recordPlainCssDependencies(result.messages)
     // force synchronous transform (we know we only have sync plugins)
     code = result.css
     outMap = result.map
@@ -129,7 +196,8 @@ export function doCompileStyle(
     code: code || ``,
     map: outMap && (outMap.toJSON() as any),
     errors,
-    rawResult: result
+    rawResult: result,
+    dependencies
   }
 }
 
@@ -137,8 +205,21 @@ function preprocess(
   options: SFCStyleCompileOptions,
   preprocessor: StylePreprocessor
 ): StylePreprocessorResults {
-  return preprocessor.render(options.source, options.map, {
-    filename: options.filename,
-    ...options.preprocessOptions
-  })
+  if ((__ESM_BROWSER__ || __GLOBAL__) && !options.preprocessCustomRequire) {
+    throw new Error(
+      `[@vue/compiler-sfc] Style preprocessing in the browser build must ` +
+        `provide the \`preprocessCustomRequire\` option to return the in-browser ` +
+        `version of the preprocessor.`
+    )
+  }
+
+  return preprocessor(
+    options.source,
+    options.map,
+    {
+      filename: options.filename,
+      ...options.preprocessOptions
+    },
+    options.preprocessCustomRequire
+  )
 }

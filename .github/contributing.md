@@ -39,7 +39,7 @@ Hi! I'm really excited that you are interested in contributing to Vue.js. Before
 
 ## Development Setup
 
-You will need [Node.js](http://nodejs.org) **version 10+**, and [Yarn](https://yarnpkg.com/en/docs/install).
+You will need [Node.js](http://nodejs.org) **version 10+**, and [Yarn 1.x](https://yarnpkg.com/en/docs/install).
 
 After cloning the repo, run:
 
@@ -244,7 +244,7 @@ Test coverage is continuously deployed at https://vue-next-coverage.netlify.app/
 
 This project uses [tsd](https://github.com/SamVerschueren/tsd) to test the built definition files (`*.d.ts`).
 
-Type tests are located in the `test-dts` directory. To run the dts tests, run `yarn test-dts`. Note that the type test requires all relevant `*.d.ts` files to be built first (and the script does it for you). Once the `d.ts` files are built and up-to-date, the tests can be re-run by simply running `./node_modules/.bin/tsd`.
+Type tests are located in the `test-dts` directory. To run the dts tests, run `yarn test-dts`. Note that the type test requires all relevant `*.d.ts` files to be built first (and the script does it for you). Once the `d.ts` files are built and up-to-date, the tests can be re-run by simply running `yarn test-dts`.
 
 ## Financial Contribution
 

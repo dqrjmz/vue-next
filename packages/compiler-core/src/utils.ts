@@ -20,7 +20,8 @@ import {
   IfBranchNode,
   TextNode,
   InterpolationNode,
-  VNodeCall
+  VNodeCall,
+  SimpleExpressionNode
 } from './ast'
 import { TransformContext } from './transform'
 import {
@@ -30,9 +31,13 @@ import {
   KEEP_ALIVE,
   BASE_TRANSITION
 } from './runtimeHelpers'
-import { isString, isFunction, isObject, hyphenate } from '@vue/shared'
+import { isString, isObject, hyphenate, extend } from '@vue/shared'
 import { parse } from '@babel/parser'
+import { walk } from 'estree-walker'
 import { Node } from '@babel/types'
+
+export const isStaticExp = (p: JSChildNode): p is SimpleExpressionNode =>
+  p.type === NodeTypes.SIMPLE_EXPRESSION && p.isStatic
 
 export const isBuiltInType = (tag: string, expected: string): boolean =>
   tag === expected || tag === hyphenate(expected)
@@ -49,31 +54,16 @@ export function isCoreComponent(tag: string): symbol | void {
   }
 }
 
-// cache node requires
-// lazy require dependencies so that they don't end up in rollup's dep graph
-// and thus can be tree-shaken in browser builds.
-let _parse: typeof parse
-let _walk: any
-
-export function loadDep(name: string) {
-  if (!__BROWSER__ && typeof process !== 'undefined' && isFunction(require)) {
-    return require(name)
-  } else {
-    // This is only used when we are building a dev-only build of the compiler
-    // which runs in the browser but also uses Node deps.
-    return (window as any)._deps[name]
-  }
-}
-
 export const parseJS: typeof parse = (code, options) => {
-  assert(
-    !__BROWSER__,
-    `Expression AST analysis can only be performed in non-browser builds.`
-  )
-  if (!_parse) {
-    _parse = loadDep('@babel/parser').parse
+  if (__BROWSER__) {
+    assert(
+      !__BROWSER__,
+      `Expression AST analysis can only be performed in non-browser builds.`
+    )
+    return null as any
+  } else {
+    return parse(code, options)
   }
-  return _parse(code, options)
 }
 
 interface Walker {
@@ -82,12 +72,15 @@ interface Walker {
 }
 
 export const walkJS = (ast: Node, walker: Walker) => {
-  assert(
-    !__BROWSER__,
-    `Expression AST analysis can only be performed in non-browser builds.`
-  )
-  const walk = _walk || (_walk = loadDep('estree-walker').walk)
-  return walk(ast, walker)
+  if (__BROWSER__) {
+    assert(
+      !__BROWSER__,
+      `Expression AST analysis can only be performed in non-browser builds.`
+    )
+    return null as any
+  } else {
+    return (walk as any)(ast, walker)
+  }
 }
 
 const nonIdentifierRE = /^\d|[^\$\w]/
@@ -95,8 +88,10 @@ export const isSimpleIdentifier = (name: string): boolean =>
   !nonIdentifierRE.test(name)
 
 const memberExpRE = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*$/
-export const isMemberExpression = (path: string): boolean =>
-  memberExpRE.test(path)
+export const isMemberExpression = (path: string): boolean => {
+  if (!path) return false
+  return memberExpRE.test(path.trim())
+}
 
 export function getInnerRange(
   loc: SourceLocation,
@@ -128,7 +123,11 @@ export function advancePositionWithClone(
   source: string,
   numberOfCharacters: number = source.length
 ): Position {
-  return advancePositionWithMutation({ ...pos }, source, numberOfCharacters)
+  return advancePositionWithMutation(
+    extend({}, pos),
+    source,
+    numberOfCharacters
+  )
 }
 
 // advance by mutation without cloning (for performance reasons), since this
@@ -201,12 +200,7 @@ export function findProp(
 }
 
 export function isBindKey(arg: DirectiveNode['arg'], name: string): boolean {
-  return !!(
-    arg &&
-    arg.type === NodeTypes.SIMPLE_EXPRESSION &&
-    arg.isStatic &&
-    arg.content === name
-  )
+  return !!(arg && isStaticExp(arg) && arg.content === name)
 }
 
 export function hasDynamicKeyVBind(node: ElementNode): boolean {

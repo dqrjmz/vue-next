@@ -1,43 +1,45 @@
 import { currentRenderingInstance } from '../componentRenderUtils'
-import {
-  currentInstance,
-  Component,
-  FunctionalComponent,
-  ComponentOptions
-} from '../component'
+import { currentInstance, Component, FunctionalComponent } from '../component'
 import { Directive } from '../directives'
-import {
-  camelize,
-  capitalize,
-  isString,
-  isObject,
-  isFunction
-} from '@vue/shared'
+import { camelize, capitalize, isString } from '@vue/shared'
 import { warn } from '../warning'
+import { VNodeTypes } from '../vnode'
 
 const COMPONENTS = 'components'
 const DIRECTIVES = 'directives'
 
+/**
+ * @private
+ */
 export function resolveComponent(name: string): Component | string | undefined {
   return resolveAsset(COMPONENTS, name) || name
 }
 
-export function resolveDynamicComponent(
-  component: unknown
-): Component | string | undefined {
-  if (!component) return
+export const NULL_DYNAMIC_COMPONENT = Symbol()
+
+/**
+ * @private
+ */
+export function resolveDynamicComponent(component: unknown): VNodeTypes {
   if (isString(component)) {
     return resolveAsset(COMPONENTS, component, false) || component
-  } else if (isFunction(component) || isObject(component)) {
-    return component
+  } else {
+    // invalid types will fallthrough to createVNode and raise warning
+    return (component || NULL_DYNAMIC_COMPONENT) as any
   }
 }
 
+/**
+ * @private
+ */
 export function resolveDirective(name: string): Directive | undefined {
   return resolveAsset(DIRECTIVES, name)
 }
 
-// overload 1: components
+/**
+ * @private
+ * overload 1: components
+ */
 function resolveAsset(
   type: typeof COMPONENTS,
   name: string,
@@ -48,7 +50,7 @@ function resolveAsset(
   type: typeof DIRECTIVES,
   name: string
 ): Directive | undefined
-
+// implementation
 function resolveAsset(
   type: typeof COMPONENTS | typeof DIRECTIVES,
   name: string,
@@ -74,19 +76,8 @@ function resolveAsset(
         res = self
       }
     }
-    if (__DEV__) {
-      if (res) {
-        // in dev, infer anonymous component's name based on registered name
-        if (
-          type === COMPONENTS &&
-          isObject(res) &&
-          !(res as ComponentOptions).name
-        ) {
-          ;(res as ComponentOptions).name = name
-        }
-      } else if (warnMissing) {
-        warn(`Failed to resolve ${type.slice(0, -1)}: ${name}`)
-      }
+    if (__DEV__ && warnMissing && !res) {
+      warn(`Failed to resolve ${type.slice(0, -1)}: ${name}`)
     }
     return res
   } else if (__DEV__) {

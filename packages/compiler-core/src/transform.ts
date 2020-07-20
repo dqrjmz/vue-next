@@ -82,7 +82,7 @@ export interface TransformContext extends Required<TransformOptions> {
   helpers: Set<symbol>
   components: Set<string>
   directives: Set<string>
-  hoists: JSChildNode[]
+  hoists: (JSChildNode | null)[]
   imports: Set<ImportItem>
   temps: number
   cached: number
@@ -120,6 +120,8 @@ export function createTransformContext(
     expressionPlugins = [],
     scopeId = null,
     ssr = false,
+    ssrCssVars = ``,
+    bindingMetadata = {},
     onError = defaultOnError
   }: TransformOptions
 ): TransformContext {
@@ -135,6 +137,8 @@ export function createTransformContext(
     expressionPlugins,
     scopeId,
     ssr,
+    ssrCssVars,
+    bindingMetadata,
     onError,
 
     // state
@@ -146,7 +150,7 @@ export function createTransformContext(
     imports: new Set(),
     temps: 0,
     cached: 0,
-    identifiers: {},
+    identifiers: Object.create(null),
     scopes: {
       vFor: 0,
       vSlot: 0,
@@ -230,12 +234,14 @@ export function createTransformContext(
     },
     hoist(exp) {
       context.hoists.push(exp)
-      return createSimpleExpression(
+      const identifier = createSimpleExpression(
         `_hoisted_${context.hoists.length}`,
         false,
         exp.loc,
         true
       )
+      identifier.hoisted = exp
+      return identifier
     },
     cache(exp, isVNode = false) {
       return createCacheExpression(++context.cached, exp, isVNode)

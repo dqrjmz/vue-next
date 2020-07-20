@@ -62,7 +62,7 @@ describe('scheduler', () => {
       const calls: string[] = []
       const job1 = () => {
         calls.push('job1')
-        // job2 will be excuted after job1 at the same tick
+        // job2 will be executed after job1 at the same tick
         queueJob(job2)
       }
       const job2 = () => {
@@ -123,7 +123,7 @@ describe('scheduler', () => {
       const calls: string[] = []
       const cb1 = () => {
         calls.push('cb1')
-        // cb2 will be excuted after cb1 at the same tick
+        // cb2 will be executed after cb1 at the same tick
         queuePostFlushCb(cb2)
       }
       const cb2 = () => {
@@ -277,5 +277,21 @@ describe('scheduler', () => {
     queueJob(job3)
     await nextTick()
     expect(calls).toEqual(['job3', 'job2', 'job1'])
+  })
+
+  // #1595
+  test('avoid duplicate postFlushCb invocation', async () => {
+    const calls: string[] = []
+    const cb1 = () => {
+      calls.push('cb1')
+      queuePostFlushCb(cb2)
+    }
+    const cb2 = () => {
+      calls.push('cb2')
+    }
+    queuePostFlushCb(cb1)
+    queuePostFlushCb(cb2)
+    await nextTick()
+    expect(calls).toEqual(['cb1', 'cb2'])
   })
 })

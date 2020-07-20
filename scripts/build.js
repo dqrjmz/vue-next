@@ -1,4 +1,4 @@
-/*
+﻿/*
 Produces production builds and stitches together d.ts files.
 
 To specify the package to build, simply pass its name and the desired build
@@ -43,7 +43,10 @@ console.log(targets.isNativeTag('abcd'))
 run()
 
 async function run() {
-  // 没有指定文件夹
+  if (isRelease) {
+    // remove build cache for release builds to avoid outdated enum values
+    await fs.remove(path.resolve(__dirname, '../node_modules/.rts2_cache'))
+  }
   if (!targets.length) {
     // 全部构建
     await buildAll(allTargets)
@@ -111,19 +114,21 @@ async function build(target) {
     const extractorConfig = ExtractorConfig.loadFileAndPrepare(
       extractorConfigPath
     )
-    const result = Extractor.invoke(extractorConfig, {
+    const extractorResult = Extractor.invoke(extractorConfig, {
       localBuild: true,
       showVerboseMessages: true
     })
 
-    if (result.succeeded) {
-      // concat additional d.ts to rolled-up dts (mostly for JSX)
-      if (pkg.buildOptions && pkg.buildOptions.dts) {
+    if (extractorResult.succeeded) {
+      // concat additional d.ts to rolled-up dts
+      const typesDir = path.resolve(pkgDir, 'types')
+      if (await fs.exists(typesDir)) {
         const dtsPath = path.resolve(pkgDir, pkg.types)
         const existing = await fs.readFile(dtsPath, 'utf-8')
+        const typeFiles = await fs.readdir(typesDir)
         const toAdd = await Promise.all(
-          pkg.buildOptions.dts.map(file => {
-            return fs.readFile(path.resolve(pkgDir, file), 'utf-8')
+          typeFiles.map(file => {
+            return fs.readFile(path.resolve(typesDir, file), 'utf-8')
           })
         )
         await fs.writeFile(dtsPath, existing + '\n' + toAdd.join('\n'))
