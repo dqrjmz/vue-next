@@ -27,7 +27,7 @@ export function provide<T>(key: InjectionKey<T> | string, value: T) {
       currentInstance.parent && currentInstance.parent.provides
       // 比较是否为同一个
     if (parentProvides === provides) {
-      // 将提供器继承给子提供器
+      // 将父提供器继承给（当前组件实例）提供器
       provides = currentInstance.provides = Object.create(parentProvides)
     }
     // TS doesn't allow symbol as index type
@@ -48,6 +48,7 @@ export function inject(
   key: InjectionKey<any> | string,
   defaultValue?: unknown
 ) {
+  // 以至于这个能够被在函数式组件中调用
   // fallback to `currentRenderingInstance` so that this can be called in
   // a functional component
   const instance = currentInstance || currentRenderingInstance
@@ -58,11 +59,11 @@ export function inject(
     // 判断依赖是否在提供器中
     if (key in provides) {
       // TS doesn't allow symbol as index type
-      // 存在返回依赖
+      // 存在返回依赖，从提供器中获取依赖
       return provides[key as string]
     } else if (arguments.length > 1) { // 大于2个参数
       return defaultValue
-    } else if (__DEV__) { //开发中
+    } else if (__DEV__) { // 开发中
       // 注射器没找到
       warn(`injection "${String(key)}" not found.`)
     }

@@ -525,9 +525,13 @@ function setupStatefulComponent(
     exposePropsOnRenderContext(instance)
   }
   // 2. call setup()
+  // 在组件created之前
+  // 作为Composition api入口点
   const { setup } = Component
   if (setup) {
+    // 安装上下文
     const setupContext = (instance.setupContext =
+      // 如果setup是数组，创建setup上下文，否则返回null
       setup.length > 1 ? createSetupContext(instance) : null)
 
     currentInstance = instance
@@ -536,7 +540,7 @@ function setupStatefulComponent(
       setup,
       instance,
       ErrorCodes.SETUP_FUNCTION,
-      // 组件的props属性
+      // 组件的props属性，setup(props)方法接收 
       [__DEV__ ? shallowReadonly(instance.props) : instance.props, setupContext]
     )
     resetTracking()
@@ -707,7 +711,7 @@ function finishComponentSetup(
     currentInstance = null
   }
 
-  console.log(instance);
+  // console.log(instance);
 }
 
 const attrHandlers: ProxyHandler<Data> = {
@@ -727,6 +731,10 @@ const attrHandlers: ProxyHandler<Data> = {
   }
 }
 
+/**
+ * 创建setup上下文对象
+ * @param instance 组件实例
+ */
 function createSetupContext(instance: ComponentInternalInstance): SetupContext {
   if (__DEV__) {
     // We use getters in dev in case libs like test-utils overwrite instance
@@ -743,6 +751,8 @@ function createSetupContext(instance: ComponentInternalInstance): SetupContext {
       }
     })
   } else {
+    // 三个对象的属性（插槽，调用订阅函数，不是响应式对象
+    // 因为setup执行的时候，created没有执行，所以组件实例上，只能有这些
     return {
       attrs: instance.attrs,
       slots: instance.slots,

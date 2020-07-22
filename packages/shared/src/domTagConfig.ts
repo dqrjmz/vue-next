@@ -32,6 +32,9 @@ const SVG_TAGS =
 const VOID_TAGS =
   'area,base,br,col,embed,hr,img,input,link,meta,param,source,track,wbr'
 
+// html标签
 export const isHTMLTag = /*#__PURE__*/ makeMap(HTML_TAGS)
+// svg标签
 export const isSVGTag = /*#__PURE__*/ makeMap(SVG_TAGS)
+// void标签
 export const isVoidTag = /*#__PURE__*/ makeMap(VOID_TAGS)

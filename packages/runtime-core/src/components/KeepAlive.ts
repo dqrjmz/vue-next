@@ -207,13 +207,17 @@ const KeepAliveImpl = {
 
     return () => {
       pendingCacheKey = null
-
+      // 插槽中没有数据
+      console.log(slots.default);
       if (!slots.default) {
         return null
       }
-
+      // 获取默认插槽中的vnode
       const children = slots.default()
+      console.log(children);
+      // 虚拟节点
       let vnode = children[0]
+      // 子组件的数量
       if (children.length > 1) {
         if (__DEV__) {
           warn(`KeepAlive should contain exactly one component child.`)

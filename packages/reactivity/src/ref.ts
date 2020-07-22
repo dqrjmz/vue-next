@@ -35,6 +35,14 @@ export function ref<T extends object>(
 ): T extends Ref ? T : Ref<UnwrapRef<T>>
 export function ref<T>(value: T): Ref<UnwrapRef<T>>
 export function ref<T = any>(): Ref<T | undefined>
+/**
+ * 创建单独的响应式值
+ * 1. 当有一个基本类型的数据想要成为响应式的时候，避免使用reactive
+ * 2. 在模板中自动拆包
+ * 3. js中访问 ref(1).value
+ * 4. ref()值，作为reactive的属性时，自动拆包
+ * @param value 响应式的值
+ */
 export function ref(value?: unknown) {
   // 创建对值的引用
   return createRef(value)
@@ -145,11 +153,16 @@ export function toRefs<T extends object>(object: T): ToRefs<T> {
   return ret
 }
 
-// 将对象的某个属性进行ref对象化
+/**
+ * 将对象的某个属性进行ref对象化
+ * @param object 对象
+ * @param key key
+ */
 export function toRef<T extends object, K extends keyof T>(
   object: T,
   key: K
 ): Ref<T[K]> {
+  // 
   return {
     __v_isRef: true,
     get value(): any {

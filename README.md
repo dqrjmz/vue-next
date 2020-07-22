@@ -88,3 +88,11 @@ We are using [this thread](https://github.com/vuejs/jsx/issues/141) to unify the
 ## Contribution
 
 See [Contributing Guide](https://github.com/vuejs/vue-next/blob/master/.github/contributing.md).
+
+
+Composition api
+1. 当组件的逻辑在变得更大，逻辑关注点就变得更多，带来的就是阅读和理解的困难
+2. 当利用opions进行逻辑划分的时候，会模糊底层逻辑关注点
+
+解决：
+1. 将相同逻辑关注点的代码放在一起，这就是Compositin api要做的

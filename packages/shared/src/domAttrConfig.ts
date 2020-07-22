@@ -1,6 +1,7 @@
 import { makeMap } from './makeMap'
 
 /**
+ * 在客户端我们只需要提供特定的案例给从他们的对应的dom属性中有不同的名称的布尔属性
  * On the client we only need to offer special cases for boolean attributes that
  * have different names from their corresponding dom properties:
  * - itemscope -> N/A
@@ -37,7 +38,7 @@ export function isSSRSafeAttrName(name: string): boolean {
   }
   return (attrValidationCache[name] = !isUnsafe)
 }
-
+// 属性到特性
 export const propsToAttrMap: Record<string, string | undefined> = {
   acceptCharset: 'accept-charset',
   className: 'class',
@@ -61,6 +62,7 @@ export const isNoUnitNumericStyleProp = /*#__PURE__*/ makeMap(
 )
 
 /**
+ * 已知属性，这个被用于运行时静态节点表示，以至于我们不需要字符串化，不能从html中被设置的绑定
  * Known attributes, this is used for stringification of runtime static nodes
  * so that we don't stringify bindings that cannot be set from HTML.
  * Don't also forget to allow `data-*` and `aria-*`!

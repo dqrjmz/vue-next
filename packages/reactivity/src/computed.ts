@@ -23,7 +23,12 @@ export function computed<T>(getter: ComputedGetter<T>): ComputedRef<T>
 export function computed<T>(
   options: WritableComputedOptions<T>
 ): WritableComputedRef<T>
-// get访问器
+/**
+ * get访问器
+ * 1. 返回一个不可变的reactive对象
+ * 2. 可以传入对象getter,setter（表示可写的计算属性
+ * @param getterOrOptions 函数 ，get,set
+ */
 export function computed<T>(
   getterOrOptions: ComputedGetter<T> | WritableComputedOptions<T>
 ) {
