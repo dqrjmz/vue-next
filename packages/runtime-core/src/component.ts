@@ -110,6 +110,7 @@ export interface ClassComponent {
   __vccOpts: ComponentOptions
 }
 
+// 函数是组件 | 选项组件
 export type Component = ComponentOptions | FunctionalComponent<any>
 
 // A type used in public APIs where a component type is expected.
@@ -169,6 +170,7 @@ export type InternalRenderFunction = {
 }
 
 /**
+ * 我们在内部实例上暴露了属性的一套子集，因为对于高级外部库和工具他们是有用的
  * We expose a subset of properties on the internal instance as they are
  * useful for advanced external libraries and tools.
  */
@@ -274,6 +276,7 @@ export interface ComponentInternalInstance {
   setupContext: SetupContext | null
 
   /**
+   * 相关悬念
    * suspense related
    * @internal
    */
@@ -438,7 +441,9 @@ export function createComponentInstance(
 
 export let currentInstance: ComponentInternalInstance | null = null
 
-// 获取组件实例
+/**
+ * 获取当前组件实例
+ */
 export const getCurrentInstance: () => ComponentInternalInstance | null = () =>
   currentInstance || currentRenderingInstance
 
@@ -452,10 +457,16 @@ export const setCurrentInstance = (
 // 是否是内置的标签
 const isBuiltInTag = /*#__PURE__*/ makeMap('slot,component')
 
-// 验证组件名称
+/**
+ * 验证组件名称
+ * @param name 组件名称
+ * @param config 组件配置
+ */
 export function validateComponentName(name: string, config: AppConfig) {
   const appIsNativeTag = config.isNativeTag || NO
+  // vue内置的标签 || 原生html的标签 
   if (isBuiltInTag(name) || appIsNativeTag(name)) {
+    // 不要使用内置或者保留的html元素作为组件id
     warn(
       'Do not use built-in or reserved HTML elements as component id: ' + name
     )

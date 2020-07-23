@@ -36,27 +36,43 @@ export interface AsyncComponentOptions<T = any> {
   ) => any
 }
 
+/**
+ * 定义异步组件
+ * @param source 
+ */
 export function defineAsyncComponent<
   T extends PublicAPIComponent = { new (): ComponentPublicInstance }
 >(source: AsyncComponentLoader<T> | AsyncComponentOptions<T>): T {
+  // 为函数时
   if (isFunction(source)) {
+    // 组件加载器
     source = { loader: source }
   }
 
   const {
+    // 加载器
     loader,
+    // 加载中组件
     loadingComponent: loadingComponent,
+    // 错误组件
     errorComponent: errorComponent,
+    // 延迟时长
     delay = 200,
+    // 超时时长
     timeout, // undefined = never times out
+    // 
     suspensible = true,
+    // 错误处理
     onError: userOnError
   } = source
 
+  // 等待请求
   let pendingRequest: Promise<Component> | null = null
+  // 完成
   let resolvedComp: Component | undefined
 
   let retries = 0
+  // 请求失败后的重试
   const retry = () => {
     retries++
     pendingRequest = null
@@ -107,9 +123,12 @@ export function defineAsyncComponent<
   }
 
   return defineComponent({
+    // 异步加载器
     __asyncLoader: load,
+    // 组件名称
     name: 'AsyncComponentWrapper',
     setup() {
+      // 
       const instance = currentInstance!
 
       // already resolved
@@ -140,18 +159,24 @@ export function defineAsyncComponent<
           })
       }
 
+      // 文件的状态
+      // 被加载完成
       const loaded = ref(false)
+      // 错误
       const error = ref()
+      // 被延迟
       const delayed = ref(!!delay)
 
+      // 延迟
       if (delay) {
         setTimeout(() => {
           delayed.value = false
         }, delay)
       }
-
+      // 有超时配置
       if (timeout != null) {
         setTimeout(() => {
+          // 没有加载值
           if (!loaded.value) {
             const err = new Error(
               `Async component timed out after ${timeout}ms.`
@@ -161,9 +186,10 @@ export function defineAsyncComponent<
           }
         }, timeout)
       }
-
+      // 文件加载完成
       load()
         .then(() => {
+          // 注释加载成功
           loaded.value = true
         })
         .catch(err => {

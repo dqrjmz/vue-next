@@ -91,6 +91,7 @@ export type Plugin =
  */
 export function createAppContext(): AppContext {
   return {
+    // devtools
     config: {
       isNativeTag: NO,
       devtools: true,
@@ -124,6 +125,7 @@ export function createAppAPI<HostElement>(
 ): CreateAppFunction<HostElement> {
  /**
   * 用来创建app的原始函数(首次初始化,根组件,没有根属性)
+  * 1. 利用闭包将数据变量进行保存
   * @param {Object} 根组件
   * @Param 根属性
   */
@@ -135,12 +137,15 @@ export function createAppAPI<HostElement>(
       rootProps = null
     }
 
-    // 创建app的上下文对象
+    // 创建app的上下文对象,一直保存在闭包之中
     const context = createAppContext()
+
     // 值的集合不重复（不让插件重复安装
     const installedPlugins = new Set()
+
     // app没有被安装
     let isMounted = false
+
     // 创建的app对象
     const app: App = {
       _component: rootComponent as Component,
@@ -165,7 +170,11 @@ export function createAppAPI<HostElement>(
         }
       },
 
-      // 注册插件
+      /**
+       * 注册插件
+       * @param plugin 
+       * @param options 
+       */
       use(plugin: Plugin, ...options: any[]) {
         if (installedPlugins.has(plugin)) {
           __DEV__ && warn(`Plugin has already been applied to target app.`)
@@ -184,7 +193,10 @@ export function createAppAPI<HostElement>(
         return app
       },
 
-      // 混入
+      /**
+       * 混入
+       * @param mixin 
+       */
       mixin(mixin: ComponentOptions) {
         if (__FEATURE_OPTIONS__) {
           if (!context.mixins.includes(mixin)) {
@@ -201,33 +213,48 @@ export function createAppAPI<HostElement>(
         return app
       },
 
-      // 组件
+      /**
+       * 注册或者搜索组件
+       * @param name 组件名称
+       * @param component 组件配置选项
+       */
       component(name: string, component?: PublicAPIComponent): any {
         if (__DEV__) {
           validateComponentName(name, context.config)
         }
+        // 没有配置
         if (!component) {
+          // 获取应用实例中注册的组件
           return context.components[name]
         }
+        // 注册的组件存在
         if (__DEV__ && context.components[name]) {
+          // 组件已经被注册到了目标应用程序
           warn(`Component "${name}" has already been registered in target app.`)
         }
+        // 给应用的components属性，注册组件
         context.components[name] = component
         return app
       },
 
-      // 指令
+      /**
+       * 指令
+       * @param name 名称
+       * @param directive 指令 
+       */
       directive(name: string, directive?: Directive) {
         if (__DEV__) {
           validateDirectiveName(name)
         }
-
+        // 没有指令，返回指令容器中的指定，指令
         if (!directive) {
           return context.directives[name] as any
         }
+        // 检查指令是否已经存在
         if (__DEV__ && context.directives[name]) {
           warn(`Directive "${name}" has already been registered in target app.`)
         }
+        // 添加到指令容器中
         context.directives[name] = directive
         return app
       },
@@ -239,9 +266,12 @@ export function createAppAPI<HostElement>(
       mount(rootContainer: HostElement, isHydrate?: boolean): any {
         // 没有被安装
         if (!isMounted) {
-          // 创建根组件的vnode
+          // 创建组件的vnode，跟组件的属性
           const vnode = createVNode(rootComponent as Component, rootProps)
+
+          // 存储app上下文到根vnode
           // store app context on the root VNode.
+          // 这个将在初始化安装时，被设置在根实例上
           // this will be set on the root instance on initial mount.
           vnode.appContext = context
 
@@ -262,9 +292,9 @@ export function createAppAPI<HostElement>(
           isMounted = true
           // 在app上添加_container属性作为 根挂载点的引用
           app._container = rootContainer
-
+          // 初始化app, Vue的版本
           __DEV__ && initApp(app, version)
-
+          // 
           return vnode.component!.proxy
         } else if (__DEV__) {
           // 已经被安装过了 
@@ -277,17 +307,27 @@ export function createAppAPI<HostElement>(
         }
       },
 
-      // 卸载
+      /**
+       * 卸载
+       */
       unmount() {
+        // 被安装了
         if (isMounted) {
+          // vnode为空，说明组件为卸载操作
           render(null, app._container)
-
+          // 
           __DEV__ && appUnmounted(app)
         } else if (__DEV__) {
+          // 不能卸载一个没有安装的app
           warn(`Cannot unmount an app that is not mounted.`)
         }
       },
 
+      /**
+       * 注册提供器
+       * @param key 
+       * @param value 
+       */
       provide(key, value) {
         if (__DEV__ && key in context.provides) {
           warn(
@@ -297,12 +337,13 @@ export function createAppAPI<HostElement>(
         }
         // TypeScript doesn't allow symbols as index type
         // https://github.com/Microsoft/TypeScript/issues/24587
+        // 给app的提供器中添加依赖
         context.provides[key as string] = value
 
         return app
       }
     }
-
+    // app实例添加__app属性
     context.__app = app
 
     return app

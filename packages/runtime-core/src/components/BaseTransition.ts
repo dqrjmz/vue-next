@@ -136,6 +136,7 @@ const BaseTransitionImpl = {
     let prevTransitionKey: any
 
     return () => {
+      // 获取插槽中的组件，数组
       const children =
         slots.default && getTransitionRawChildren(slots.default(), true)
       if (!children || !children.length) {
@@ -144,6 +145,7 @@ const BaseTransitionImpl = {
 
       // warn multiple elements
       if (__DEV__ && children.length > 1) {
+        // 只能使用单一的元素或者组件
         warn(
           '<transition> can only be used on a single element or component. Use ' +
             '<transition-group> for lists.'
@@ -160,6 +162,7 @@ const BaseTransitionImpl = {
       }
 
       // at this point children has a guaranteed length of 1.
+      // 插槽中的组件
       const child = children[0]
       if (state.isLeaving) {
         return emptyPlaceholder(child)
@@ -433,6 +436,11 @@ export function setTransitionHooks(vnode: VNode, hooks: TransitionHooks) {
   }
 }
 
+/**
+ * 获取过滤原生子元素
+ * @param children 插槽中的组件元素
+ * @param keepComment 
+ */
 export function getTransitionRawChildren(
   children: VNode[],
   keepComment: boolean = false

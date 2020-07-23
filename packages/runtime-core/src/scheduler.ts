@@ -9,23 +9,29 @@ export interface Job {
 
 // 队列
 const queue: (Job | null)[] = []
-// 
+// 需要刷新的回调函数
 const postFlushCbs: Function[] = []
-// resloved的Promise对象
+// 成功状态的Promise对象
 const p = Promise.resolve()
 
-// 没有被刷新
+// 是否开始被刷新
 let isFlushing = false
-// 没有刷新等待中
+// 是否在刷新中
 let isFlushPending = false
 let flushIndex = 0
 let pendingPostFlushCbs: Function[] | null = null
 let pendingPostFlushIndex = 0
+// 递归限制100
 const RECURSION_LIMIT = 100
 type CountMap = Map<Job | Function, number>
 
-// 异步执行回调
+/**
+ * 异步执行回调
+ * @param fn 回调函数
+ * @returns Promise实例
+ */
 export function nextTick(fn?: () => void): Promise<void> {
+  // 是函数直接放到promise的then中， 不是直接返回
   return fn ? p.then(fn) : p
 }
 

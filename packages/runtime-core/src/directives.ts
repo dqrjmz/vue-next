@@ -83,6 +83,7 @@ export type DirectiveArguments = Array<
 >
 
 /**
+ * 添加指令到vnode
  * Adds directives to a VNode.
  */
 export function withDirectives<T extends VNode>(

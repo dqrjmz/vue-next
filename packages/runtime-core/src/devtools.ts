@@ -31,9 +31,16 @@ export function setDevtoolsHook(hook: DevtoolsHook) {
   devtools = hook
 }
 
+/**
+ * 初始化app
+ * @param app 应用程序实例
+ * @param version 版本
+ */
 export function initApp(app: App, version: string) {
   // TODO queue if devtools is undefined
+  // 没有开发工具，直接返回
   if (!devtools) return
+  // 调用开发工具app初始化
   devtools.emit(DevtoolsHooks.APP_INIT, app, version, {
     Fragment: Fragment,
     Text: Text,
@@ -42,8 +49,14 @@ export function initApp(app: App, version: string) {
   })
 }
 
+/**
+ * app被卸载
+ * @param app 
+ */
 export function appUnmounted(app: App) {
+  // 没有开启vue开发者工具,不需要处理
   if (!devtools) return
+  // 调用开发者工具钩子函数，卸载
   devtools.emit(DevtoolsHooks.APP_UNMOUNT, app)
 }
 

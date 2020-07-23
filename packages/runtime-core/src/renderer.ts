@@ -351,7 +351,7 @@ export const setRef = (
  * ```
  */
 /**
- * 创建app渲染器
+ * 创建渲染器
  * @param options  渲染器配置参数
  */
 export function createRenderer<
@@ -384,6 +384,11 @@ function baseCreateRenderer(
 ): HydrationRenderer
 
 // implementation
+/**
+ * 基础的创建渲染器
+ * @param options 渲染器所有操作的配置
+ * @param createHydrationFns 
+ */
 function baseCreateRenderer(
   options: RendererOptions,
   createHydrationFns?: typeof createHydrationFunctions
@@ -405,6 +410,7 @@ function baseCreateRenderer(
     cloneNode: hostCloneNode,
     insertStaticContent: hostInsertStaticContent
   } = options
+  
 
   // 注意: 函数内部的这个闭包应该使用函数表达式的风格为了阻止行内被修改
   // Note: functions inside this closure should use `const xxx = () => {}`
@@ -2160,7 +2166,7 @@ function baseCreateRenderer(
 
   /**
    * 渲染函数
-   * @param vnode 虚拟节点
+   * @param vnode 虚拟节点， 新节点
    * @param container html中的容器元素
    */
   const render: RootRenderFunction = (vnode, container) => {
@@ -2212,6 +2218,13 @@ function baseCreateRenderer(
   }
 }
 
+/**
+ * 调用vnode钩子函数
+ * @param hook 钩子函数
+ * @param instance 组件实例
+ * @param vnode 组件的vnode
+ * @param prevVNode 组件的上一个vnode
+ */
 export function invokeVNodeHook(
   hook: VNodeHook,
   instance: ComponentInternalInstance | null,

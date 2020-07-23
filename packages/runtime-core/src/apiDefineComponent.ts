@@ -203,7 +203,9 @@ export function defineComponent<
     EE
   >
 
-// implementation, close to no-op
+// implementation, close to no-op 实现， 
+// 使用方式，直接注册到
 export function defineComponent(options: unknown) {
+  // options是否为函数，为函数，改为setup形式，否则直接返回options
   return isFunction(options) ? { setup: options } : options
 }

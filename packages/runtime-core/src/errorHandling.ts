@@ -59,7 +59,7 @@ export const ErrorTypeStrings: Record<number | string, string> = {
 export type ErrorTypes = LifecycleHooks | ErrorCodes
 
 /**
- * 调用钩子函数，使用异常处理
+ * 调用函数，使用异常处理
  * @param fn setup
  * @param instance 组件实例
  * @param type 错误类型
@@ -72,17 +72,19 @@ export function callWithErrorHandling(
   args?: unknown[]
 ) {
   let res
+  // 使用try...catch,来捕获错误
   try {
-    // props属性
+    // 有参数传参调用，没有直接调用函数
     res = args ? fn(...args) : fn()
   } catch (err) {
+    // 有错误，进行错误处理
     handleError(err, instance, type)
   }
   return res
 }
 
 /**
- * 
+ * 使用异步错误处理调用函数
  * @param fn 钩子函数
  * @param instance 
  * @param type 
@@ -96,6 +98,7 @@ export function callWithAsyncErrorHandling(
 ): any[] {
   // 函数
   if (isFunction(fn)) {
+    // 
     const res = callWithErrorHandling(fn, instance, type, args)
     if (res && isPromise(res)) {
       res.catch(err => {
@@ -104,9 +107,10 @@ export function callWithAsyncErrorHandling(
     }
     return res
   }
-
+  // 非函数遍历函数数组，将结果加入values数组中
   const values = []
   for (let i = 0; i < fn.length; i++) {
+    // 将每一个处理结果返回到value
     values.push(callWithAsyncErrorHandling(fn[i], instance, type, args))
   }
   return values

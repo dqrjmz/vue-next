@@ -18,10 +18,15 @@ import { PatchFlags, ShapeFlags, isOn } from '@vue/shared'
 import { warn } from './warning'
 import { isHmrUpdating } from './hmr'
 
+// 标记当前渲染实例给资产分辨率，在渲染期间
 // mark the current rendering instance for asset resolution (e.g.
 // resolveComponent, resolveDirective) during render
 export let currentRenderingInstance: ComponentInternalInstance | null = null
 
+/**
+ * 设置当前正在渲染的组件实例
+ * @param instance 组件实例
+ */
 export function setCurrentRenderingInstance(
   instance: ComponentInternalInstance | null
 ) {

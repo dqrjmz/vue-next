@@ -1,6 +1,6 @@
 <script src="../../dist/vue.global.js"></script>
 <script>
-  const { ref, reactive, computed, createApp, effect, watchEffect, watch, onMounted } = Vue
+  const { ref, reactive, computed, createApp, effect, watchEffect, watch, onMounted, h } = Vue
 
   // math helper...
   function valueToPoint(value, index, total) {
@@ -69,15 +69,10 @@
       AxisLabel
     }
   }
+</script>
 
-  const Test = {
-    template: '<div>jmmz</div>',
-    setup(props) {
-      return {
+<script>
 
-      }
-    }
-  }
 </script>
 
 <!-- demo root element -->
@@ -93,17 +88,29 @@
     <span>{{stat.value}}</span>
     <button @click="remove(stat)" class="remove">X</button>
   </div>
-  <form id="add">
+  <form id="add" v-for="(item,index) of [1,1]" :key="index">
     <input name="newlabel" v-model="newLabel">
     <button @click="add">Add a Stat</button>
   </form>
-  <pre id="raw">{{ stats }}</pre>
+  <pre id="raw" v-attr1="1">{{ stats }}</pre>
   {{computedNewLabel}}
-  <!-- <component :is="Test"></component> -->
-  <!-- <component :is="Test"></component> -->
   <keep-alive>
-    <test></test>
+    <component :is="Test"></component>
   </keep-alive>
+  <test>
+    <template v-slot:default="slotProps">
+      使用template的
+      hhh{{slotProps.item}}
+    </template>
+  </test>
+  <test v-slot:default="slotProps">
+    单独一个slot不使用template的
+    hhh{{slotProps.item}}
+  </test>
+  <test v-slot="slotProps">
+    单独一个slot不使用template和default的
+    hhh{{slotProps.item}}
+  </test>
 </div>
 
 <script>
@@ -116,10 +123,9 @@
     { label: 'F', value: 100 }
   ]
 
-  createApp({
+  const app = createApp({
     components: {
-      Polygraph,
-      Test
+      Polygraph
     },
     setup() {
       const newLabel = ref('')
@@ -128,7 +134,8 @@
       const map = reactive({
         name: 'jmz'
       });
-      const counter = ref(0)
+      const test = ref('test')
+      const counter = ref(0);
 
       function add(e) {
         num.value++;
@@ -141,6 +148,7 @@
         //   value: 100
         // })
         // newLabel.value = ''
+        test.value='test1';
       }
 
       function remove(stat) {
@@ -149,6 +157,7 @@
         } else {
           alert('Can\'t delete more!')
         }
+        test.value='test';
       }
 
       // const stop = watchEffect(() => {
@@ -190,7 +199,7 @@
       })
 
       onMounted(() => {
-        console.log('jmz');
+
       });
 
       return {
@@ -200,10 +209,61 @@
         remove,
         computedNewLabel,
         Polygraph: Polygraph,
-        Test: 'Test'
+        Test: test
       }
     }
-  }).mount('#demo')
+  })
+
+  app.component('test', {
+    template: `
+      <div>
+        <slot :item="'slot-jmz'"></slot>
+      </div>`,
+    setup(props) {
+      return {
+
+      }
+    }
+  })
+
+  app.component('test1', {
+    template: `
+      <div>
+        <slot :item="'slot-jmz1'"></slot>
+      </div>`,
+    setup(props) {
+      return {
+
+      }
+    }
+  })
+
+  app.directive('attr1', (...args) => {
+    // console.log(args);
+  });
+
+  app.mount('#demo')
+
+  const vnode = h(
+    `h1`,
+    {
+      name: 'jmz'
+    },
+    'jmz',
+    [
+      h(
+        'div',
+        {},
+        'div'
+      )
+    ]
+  );
+  // console.log(vnode);
+
+  // Vue.nextTick(() => {
+  //   console.log(1);
+  // });
+
 </script>
 
 <style>
