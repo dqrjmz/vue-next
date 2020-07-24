@@ -266,7 +266,7 @@ export function createAppAPI<HostElement>(
       mount(rootContainer: HostElement, isHydrate?: boolean): any {
         // 没有被安装
         if (!isMounted) {
-          // 创建组件的vnode，跟组件的属性
+          // 创建组件的vnode，根组件的vnode
           const vnode = createVNode(rootComponent as Component, rootProps)
 
           // 存储app上下文到根vnode

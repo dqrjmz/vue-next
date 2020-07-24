@@ -3,7 +3,7 @@ export const enum ShapeFlags {
   ELEMENT = 1,
   // 函数组件
   FUNCTIONAL_COMPONENT = 1 << 1, // 2
-  // 无状态组件
+  // 状态组件
   STATEFUL_COMPONENT = 1 << 2, // 4
   // 子文本
   TEXT_CHILDREN = 1 << 3, // 8
@@ -13,11 +13,12 @@ export const enum ShapeFlags {
   SLOTS_CHILDREN = 1 << 5, // 32
   // 模板
   TELEPORT = 1 << 6,  // 64
-  // 
+  // 悬挂
   SUSPENSE = 1 << 7, // 128
-  // keep-alive
+  // should keep-alive
   COMPONENT_SHOULD_KEEP_ALIVE = 1 << 8, // 256
-  // 
+  // kept_alive 
   COMPONENT_KEPT_ALIVE = 1 << 9, // 512
+  // 状态组件 | 函数式组件
   COMPONENT = ShapeFlags.STATEFUL_COMPONENT | ShapeFlags.FUNCTIONAL_COMPONENT
 }

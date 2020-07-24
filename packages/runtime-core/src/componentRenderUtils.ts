@@ -42,6 +42,10 @@ export function markAttrsAccessed() {
   accessedAttrs = true
 }
 
+/**
+ * 渲染根组件
+ * @param instance 
+ */
 export function renderComponentRoot(
   instance: ComponentInternalInstance
 ): VNode {
@@ -55,6 +59,7 @@ export function renderComponentRoot(
     slots,
     attrs,
     emit,
+    // 获取组件的渲染函数
     render,
     renderCache,
     data,
@@ -63,16 +68,19 @@ export function renderComponentRoot(
   } = instance
 
   let result
+  // 组件实例
   currentRenderingInstance = instance
   if (__DEV__) {
     accessedAttrs = false
   }
   try {
     let fallthroughAttrs
+    // 有状态组件
     if (vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
       // withProxy is a proxy with a different `has` trap only for
       // runtime-compiled render functions using `with` block.
       const proxyToUse = withProxy || proxy
+      // 调用组件的渲染函数,返回组件的vnode,并将组件的vnode进行规范化处理
       result = normalizeVNode(
         render!.call(
           proxyToUse,
@@ -86,12 +94,13 @@ export function renderComponentRoot(
       )
       fallthroughAttrs = attrs
     } else {
-      // functional
+      // functional函数是组件,直接就是一个render function
       const render = Component as FunctionalComponent
       // in dev, mark attrs accessed if optional props (attrs === props)
       if (__DEV__ && attrs === props) {
         markAttrsAccessed()
       }
+      // 同样获取组件的vnode并,进行规范化处理
       result = normalizeVNode(
         render.length > 1
           ? render(
@@ -115,6 +124,7 @@ export function renderComponentRoot(
     // attr merging
     // in dev mode, comments are preserved, and it's possible for a template
     // to have comments along side the root element which makes it a fragment
+    // 组件的vnode
     let root = result
     let setRoot: ((root: VNode) => void) | undefined = undefined
     if (__DEV__) {

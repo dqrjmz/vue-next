@@ -355,9 +355,9 @@ let uid = 0
 
 /**
  * 创建组件实例
- * @param vnode 
- * @param parent 
- * @param suspense 
+ * @param vnode 节点
+ * @param parent 父组件
+ * @param suspense 挂载点
  */
 export function createComponentInstance(
   vnode: VNode,
@@ -427,6 +427,7 @@ export function createComponentInstance(
     emitted: null
   }
   if (__DEV__) {
+    // 创建渲染上下文
     instance.ctx = createRenderContext(instance)
   } else {
     instance.ctx = { _: instance }
@@ -484,8 +485,9 @@ export function setupComponent(
 
   const { props, children, shapeFlag } = instance.vnode
   const isStateful = shapeFlag & ShapeFlags.STATEFUL_COMPONENT
-  // 初始化Prop,Slot
+  // 初始化Prop
   initProps(instance, props, isStateful, isSSR)
+  // 初始化Slot
   initSlots(instance, children)
 
   const setupResult = isStateful
@@ -498,14 +500,14 @@ export function setupComponent(
 
 /**
  * 安装有状态组件
- * @param instance 
+ * @param instance 组件实例
  * @param isSSR 
  */
 function setupStatefulComponent(
   instance: ComponentInternalInstance,
   isSSR: boolean
 ) {
-  // 组件实例的type属性
+  // 组件实例的组件的类型（也是vnode的类型
   const Component = instance.type as ComponentOptions 
 
   if (__DEV__) {
@@ -544,9 +546,10 @@ function setupStatefulComponent(
     const setupContext = (instance.setupContext =
       // 如果setup是数组，创建setup上下文，否则返回null
       setup.length > 1 ? createSetupContext(instance) : null)
-
+      // 保存当前组件的引用
     currentInstance = instance
     pauseTracking()
+    // 调用setup方法，返回结果
     const setupResult = callWithErrorHandling(
       setup,
       instance,
@@ -560,12 +563,16 @@ function setupStatefulComponent(
       // 是Promise类型数据
     if (isPromise(setupResult)) {
       if (isSSR) {
+        // 服务端渲染
         // return the promise so server-renderer can wait on it
         return setupResult.then((resolvedResult: unknown) => {
           handleSetupResult(instance, resolvedResult, isSSR)
         })
+        // 特性挂载点
       } else if (__FEATURE_SUSPENSE__) {
+        // 异步setup返回Promise
         // async setup returned Promise.
+        // 
         // bail here and wait for re-entry.
         instance.asyncDep = setupResult
       } else if (__DEV__) {
@@ -594,14 +601,14 @@ export function handleSetupResult(
   setupResult: unknown,
   isSSR: boolean
 ) {
-  // 返回的是函数
+  // 函数
   if (isFunction(setupResult)) {
     // setup returned an inline render function
-    // 当作组件的render函数
+    // 当作组件的render函数，因为返回值函数可能返回vnode
     instance.render = setupResult as InternalRenderFunction
-    // 是对象
+    // 对象
   } else if (isObject(setupResult)) {
-    // 是vnode
+    // vnode
     if (__DEV__ && isVNode(setupResult)) {
       // 不应该直接返回vnode,应该返回一个渲染函数
       warn(
@@ -609,9 +616,11 @@ export function handleSetupResult(
           `return a render function instead.`
       )
     }
+    // 返回bindings对象
     // setup returned bindings.
+    // 假设从模板编译一个渲染函数现在
     // assuming a render function compiled from template is present.
-    // 
+    // 将对象进行响应式处理
     instance.setupState = reactive(setupResult)
     if (__DEV__) {
       exposeSetupStateOnRenderContext(instance)
@@ -652,7 +661,7 @@ function finishComponentSetup(
   instance: ComponentInternalInstance,
   isSSR: boolean
 ) {
-  // 获取组件选项参数
+  // 获取组件类型（vnode.type,options类型
   const Component = instance.type as ComponentOptions
 
   // template / render function normalization
@@ -750,6 +759,12 @@ function createSetupContext(instance: ComponentInternalInstance): SetupContext {
   if (__DEV__) {
     // We use getters in dev in case libs like test-utils overwrite instance
     // properties (overwrites should not be done in prod)
+    /**
+     * 创建一个冻结对象
+     * 1. attrs属性返回的是代理组件实例attrs的代理对象
+     * 2. slots
+     * 3. emit
+     */
     return Object.freeze({
       get attrs() {
         return new Proxy(instance.attrs, attrHandlers)

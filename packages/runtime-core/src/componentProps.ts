@@ -109,6 +109,13 @@ type NormalizedProp =
 // and an array of prop keys that need value casting (booleans and defaults)
 export type NormalizedPropsOptions = [Record<string, NormalizedProp>, string[]]
 
+/**
+ * 初始化组件的Props
+ * @param instance 组件实例
+ * @param rawProps 原生Props
+ * @param isStateful 是否有状态
+ * @param isSSR 是否是服务端渲染
+ */
 export function initProps(
   instance: ComponentInternalInstance,
   rawProps: Data | null,
@@ -126,6 +133,7 @@ export function initProps(
 
   if (isStateful) {
     // stateful
+    // 组件的props
     instance.props = isSSR ? props : shallowReactive(props)
   } else {
     if (!instance.type.props) {
@@ -136,6 +144,7 @@ export function initProps(
       instance.props = props
     }
   }
+  // 给组件添加attrs属性
   instance.attrs = attrs
 }
 

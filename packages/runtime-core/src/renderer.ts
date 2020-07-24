@@ -420,7 +420,7 @@ function baseCreateRenderer(
    * 补丁函数
    * @param n1 老
    * @param n2 新
-   * @param container 
+   * @param container 容器对象（真实dom
    * @param anchor 
    * @param parentComponent 
    * @param parentSuspense 
@@ -450,21 +450,29 @@ function baseCreateRenderer(
       n2.dynamicChildren = null
     }
 
+    // newVNode 节点类型，引用，标识类型
     const { type, ref, shapeFlag } = n2
+
+    // 创建vnode 根据不同节点类型
     switch (type) {
+      // 文本节点
       case Text:
         processText(n1, n2, container, anchor)
         break
+      // 注释节点
       case Comment:
         processCommentNode(n1, n2, container, anchor)
         break
+      // 静态节点（没有绑定动态数据的
       case Static:
+        // 没有oldVNode
         if (n1 == null) {
           mountStaticNode(n2, container, anchor, isSVG)
         } else if (__DEV__) {
           patchStaticNode(n1, n2, container, isSVG)
         }
         break
+        // 片段vnode
       case Fragment:
         processFragment(
           n1,
@@ -478,6 +486,7 @@ function baseCreateRenderer(
         )
         break
       default:
+        // 元素vnode
         if (shapeFlag & ShapeFlags.ELEMENT) {
           processElement(
             n1,
@@ -490,6 +499,7 @@ function baseCreateRenderer(
             optimized
           )
         } else if (shapeFlag & ShapeFlags.COMPONENT) {
+          // 组件vnode
           processComponent(
             n1,
             n2,
@@ -501,6 +511,7 @@ function baseCreateRenderer(
             optimized
           )
         } else if (shapeFlag & ShapeFlags.TELEPORT) {
+          // 传送
           ;(type as typeof TeleportImpl).process(
             n1 as TeleportVNode,
             n2 as TeleportVNode,
@@ -513,6 +524,7 @@ function baseCreateRenderer(
             internals
           )
         } else if (__FEATURE_SUSPENSE__ && shapeFlag & ShapeFlags.SUSPENSE) {
+          // 悬挂
           ;(type as typeof SuspenseImpl).process(
             n1,
             n2,
@@ -525,18 +537,29 @@ function baseCreateRenderer(
             internals
           )
         } else if (__DEV__) {
+          // 无效vnode类型
           warn('Invalid VNode type:', type, `(${typeof type})`)
         }
     }
 
+    // 
     // set ref
     if (ref != null && parentComponent) {
       setRef(ref, n1 && n1.ref, parentComponent, parentSuspense, n2)
     }
   }
 
+  /**
+   * 处理文本vnode
+   * @param n1 新
+   * @param n2 老
+   * @param container 
+   * @param anchor 
+   */
   const processText: ProcessTextOrCommentFn = (n1, n2, container, anchor) => {
+    // 不存在
     if (n1 == null) {
+      // 
       hostInsert(
         (n2.el = hostCreateText(n2.children as string)),
         container,
@@ -689,17 +712,23 @@ function baseCreateRenderer(
       dirs
     } = vnode
     if (
+      // 非开发环境
       !__DEV__ &&
+      // vnode有el
       vnode.el &&
+      // 宿主克隆节点
       hostCloneNode !== undefined &&
+      // 
       patchFlag === PatchFlags.HOISTED
     ) {
       // If a vnode has non-null el, it means it's being reused.
       // Only static vnodes can be reused, so its mounted DOM nodes should be
       // exactly the same, and we can simply do a clone here.
       // only do this in production since cloned trees cannot be HMR updated.
+      // 克隆节点的dom节点
       el = vnode.el = hostCloneNode(vnode.el)
     } else {
+      // 创建宿主元素
       el = vnode.el = hostCreateElement(
         vnode.type as string,
         isSVG,
@@ -1145,6 +1174,7 @@ function baseCreateRenderer(
     isSVG: boolean,
     optimized: boolean
   ) => {
+    // oldVNode不存在
     if (n1 == null) {
       if (n2.shapeFlag & ShapeFlags.COMPONENT_KEPT_ALIVE) {
         ;(parentComponent!.ctx as KeepAliveContext).activate(
@@ -1155,7 +1185,16 @@ function baseCreateRenderer(
           optimized
         )
       } else {
-        // 安装组件
+        /**
+         * 安装组件
+         * 1. newVnode
+         * 2. 容器
+         * 3. 锚点
+         * 4. 父组件
+         * 5. 父挂载点
+         * 6. svg标签
+         * 7. 优化
+         */
         mountComponent(
           n2,
           container,
@@ -1167,16 +1206,17 @@ function baseCreateRenderer(
         )
       }
     } else {
+      // oldVNode，newVNode存在，更新组件操作
       updateComponent(n1, n2, optimized)
     }
   }
 
   /**
    * 安装组件
-   * @param initialVNode 被安装的vnode
-   * @param container 
+   * @param initialVNode  
+   * @param container  
    * @param anchor 
-   * @param parentComponent 父组件 
+   * @param parentComponent  
    * @param parentSuspense 
    * @param isSVG 
    * @param optimized 
@@ -1190,6 +1230,7 @@ function baseCreateRenderer(
     isSVG,
     optimized
   ) => {
+    // 创建组件实例
     const instance: ComponentInternalInstance = (initialVNode.component = createComponentInstance(
       initialVNode,
       parentComponent,
@@ -1214,7 +1255,10 @@ function baseCreateRenderer(
     if (__DEV__) {
       startMeasure(instance, `init`)
     }
+
+    // 开始安装组件
     setupComponent(instance)
+
     if (__DEV__) {
       endMeasure(instance, `init`)
     }
@@ -1237,6 +1281,16 @@ function baseCreateRenderer(
       return
     }
 
+    /**
+     * 安装渲染效果
+     * 1. 组件实例
+     * 2. newVNode
+     * 3. 容器dom
+     * 4. 锚点
+     * 5. 挂载点
+     * 6. svg标签
+     * 7. 优化
+     */
     setupRenderEffect(
       instance,
       initialVNode,
@@ -1315,24 +1369,29 @@ function baseCreateRenderer(
     isSVG,
     optimized
   ) => {
+    // 给渲染创建响应式效果
     // create reactive effect for rendering
     instance.update = effect(function componentEffect() {
+      // 组件没有被安装
       if (!instance.isMounted) {
         let vnodeHook: VNodeHook | null | undefined
+        // 组件vnode的el,props
         const { el, props } = initialVNode
+        // 组件实例
         const { bm, m, a, parent } = instance
         if (__DEV__) {
           startMeasure(instance, `render`)
         }
+        // 渲染根组件
         const subTree = (instance.subTree = renderComponentRoot(instance))
         if (__DEV__) {
           endMeasure(instance, `render`)
         }
-        // beforeMount hook
+        // beforeMount hook 安装之前 钩子函数
         if (bm) {
           invokeArrayFns(bm)
         }
-        // onVnodeBeforeMount
+        // onVnodeBeforeMount vnode安装之前
         if ((vnodeHook = props && props.onVnodeBeforeMount)) {
           invokeVNodeHook(vnodeHook, parent, initialVNode)
         }
@@ -1368,23 +1427,24 @@ function baseCreateRenderer(
           }
           initialVNode.el = subTree.el
         }
-        // mounted hook
+        // mounted hook 安装完成函数
         if (m) {
           queuePostRenderEffect(m, parentSuspense)
         }
-        // onVnodeMounted
+        // onVnodeMounted vnode安装完成
         if ((vnodeHook = props && props.onVnodeMounted)) {
           queuePostRenderEffect(() => {
             invokeVNodeHook(vnodeHook!, parent, initialVNode)
           }, parentSuspense)
         }
-        // activated hook for keep-alive roots.
+        // activated hook for keep-alive roots. 活跃的根组
         if (
           a &&
           initialVNode.shapeFlag & ShapeFlags.COMPONENT_SHOULD_KEEP_ALIVE
         ) {
           queuePostRenderEffect(a, parentSuspense)
         }
+        // 组件安装完成,这部组件被安装完成
         instance.isMounted = true
       } else {
         // updateComponent
@@ -2179,7 +2239,7 @@ function baseCreateRenderer(
       }
     } else {
       // 有vnode
-      // 直接补丁
+      // 直接补丁, 参数： 容器对象存在的_vnode(oldVNode), newVNode, 容器对象
       patch(container._vnode || null, vnode, container)
     }
     flushPostFlushCbs()
