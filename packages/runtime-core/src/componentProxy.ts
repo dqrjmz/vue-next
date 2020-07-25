@@ -168,6 +168,7 @@ export type ComponentPublicInstanceConstructor<
 
 type PublicPropertiesMap = Record<string, (i: ComponentInternalInstance) => any>
 
+// 公开属性映射
 const publicPropertiesMap: PublicPropertiesMap = extend(Object.create(null), {
   $: i => i,
   $el: i => i.vnode.el,
@@ -198,6 +199,9 @@ export interface ComponentRenderContext {
   _: ComponentInternalInstance
 }
 
+/**
+ * 公共实例代理处理器
+ */
 export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
   get({ _: instance }: ComponentRenderContext, key: string) {
     const {
@@ -210,6 +214,7 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
       appContext
     } = instance
 
+    // 让@vue/reactivity知道它，应该从不检测vue公共实例
     // let @vue/reactivity know it should never observe Vue public instances.
     if (key === ReactiveFlags.SKIP) {
       return true
@@ -222,6 +227,7 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
     // access on a plain object, so we use an accessCache object (with null
     // prototype) to memoize what access type a key corresponds to.
     let normalizedProps
+    // 如果key的第一个字符不是 `$`
     if (key[0] !== '$') {
       const n = accessCache![key]
       if (n !== undefined) {
@@ -258,6 +264,7 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
       }
     }
 
+    // 公开属性映射
     const publicGetter = publicPropertiesMap[key]
     let cssModule, globalProperties
     // public $xxx properties

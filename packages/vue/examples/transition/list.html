@@ -28,6 +28,11 @@ Vue.createApp({
   components: {
     Item
   },
+  created(){
+    this.$nextTick(()=>{
+      console.log('nextTick');
+    });
+  },
   data() {
     return {
       items: getInitialItems()

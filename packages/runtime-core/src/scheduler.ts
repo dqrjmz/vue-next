@@ -35,8 +35,12 @@ export function nextTick(fn?: () => void): Promise<void> {
   return fn ? p.then(fn) : p
 }
 
-// 队列工作
+/**
+ * 队列任务
+ * @param job 任务
+ */
 export function queueJob(job: Job) {
+  // 队列中不存在这个任务
   if (!queue.includes(job, flushIndex)) {
     // 添加到队列
     queue.push(job)
@@ -58,6 +62,10 @@ export function invalidateJob(job: Job) {
   }
 }
 
+/**
+ * 队列刷新回调
+ * @param cb 
+ */
 export function queuePostFlushCb(cb: Function | Function[]) {
   // 回调不是数组
   if (!isArray(cb)) {
@@ -77,8 +85,11 @@ export function queuePostFlushCb(cb: Function | Function[]) {
   queueFlush()
 }
 
+/**
+ * 刷新队列
+ */
 function queueFlush() {
-  // 开始刷新
+  // 没有正在刷新 && 没有刷新等待 =》 开始刷新
   if (!isFlushing && !isFlushPending) {
     // 等待刷新
     isFlushPending = true
@@ -87,6 +98,10 @@ function queueFlush() {
   }
 }
 
+/**
+ * 
+ * @param seen 
+ */
 export function flushPostFlushCbs(seen?: CountMap) {
   // 刷新回调的数组不为空
   if (postFlushCbs.length) {
@@ -116,8 +131,12 @@ export function flushPostFlushCbs(seen?: CountMap) {
 // 工作id不为空返回，为空返回无限数值，全局属性（Infinity）
 const getId = (job: Job) => (job.id == null ? Infinity : job.id)
 
+/**
+ * 刷新任务函数
+ * @param seen 
+ */
 function flushJobs(seen?: CountMap) {
-  // 不等待刷新
+  // 开始刷新，不用再等待了
   isFlushPending = false
   // 正在刷新中
   isFlushing = true
@@ -139,29 +158,34 @@ function flushJobs(seen?: CountMap) {
   // 工作在刷新开始之前，不能为null,所以另一个执行刷新工作期间，他们被验证
   // Jobs can never be null before flush starts, since they are only invalidated
   // during execution of another flushed job.
+
+  // 给任务队列排序 根据id,从大到小
   queue.sort((a, b) => getId(a!) - getId(b!))
 
+  // 遍历任务队列
   for (flushIndex = 0; flushIndex < queue.length; flushIndex++) {
+    // 获取当前任务
     const job = queue[flushIndex]
+    // 任务存在
     if (job) {
-    // 开发中
+      // 开发中
       if (__DEV__) {
-      // 检查递归更新
+        // 检查递归更新
         checkRecursiveUpdates(seen!, job)
       }
-    // 使用错误处理
+      // 使用错误处理函数进行调用
       callWithErrorHandling(job, null, ErrorCodes.SCHEDULER)
     }
   }
+  // 执行完任务，清空队列
   flushIndex = 0
   queue.length = 0
 
   flushPostFlushCbs(seen)
-  // 没有刷新
+  // 刷新完成
   isFlushing = false
   // some postFlushCb queued jobs!
-  // keep flushing until it drains.
-  // 
+  // keep flushing until it drains. 
   if (queue.length || postFlushCbs.length) {
     flushJobs(seen)
   }
@@ -178,8 +202,8 @@ function checkRecursiveUpdates(seen: CountMap, fn: Job | Function) {
     if (count > RECURSION_LIMIT) {
       throw new Error(
         'Maximum recursive updates exceeded. ' +
-          "You may have code that is mutating state in your component's " +
-          'render function or updated hook or watcher source function.'
+        "You may have code that is mutating state in your component's " +
+        'render function or updated hook or watcher source function.'
       )
     } else {
       // 每次加1
