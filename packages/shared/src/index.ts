@@ -1,4 +1,4 @@
-import { makeMap } from './makeMap'
+﻿import { makeMap } from './makeMap'
 
 export { makeMap }
 export * from './patchFlags'
@@ -6,7 +6,6 @@ export * from './shapeFlags'
 export * from './slotFlags'
 export * from './globalsWhitelist'
 export * from './codeframe'
-export * from './mockWarn'
 export * from './normalizeProp'
 export * from './domTagConfig'
 export * from './domAttrConfig'
@@ -22,7 +21,7 @@ export * from './toDisplayString'
  * for ES2020. This will need to be updated as the spec moves forward.
  * Full list at https://babeljs.io/docs/en/next/babel-parser#plugins
  */
-export const babelParserDefautPlugins = [
+export const babelParserDefaultPlugins = [
   'bigInt',
   'optionalChaining',
   'nullishCoalescingOperator'
@@ -44,7 +43,8 @@ const onRE = /^on[^a-z]/
 // on开头的字符串
 export const isOn = (key: string) => onRE.test(key)
 
-// 缓存assign方法
+export const isModelListener = (key: string) => key.startsWith('onUpdate:')
+
 export const extend = Object.assign
 
 /**
@@ -102,7 +102,9 @@ export const toRawType = (value: unknown): string => {
 export const isPlainObject = (val: unknown): val is object =>
   toTypeString(val) === '[object Object]'
 
-  // 保留属性
+export const isIntegerKey = (key: unknown) =>
+  isString(key) && key[0] !== '-' && '' + parseInt(key, 10) === key
+
 export const isReservedProp = /*#__PURE__*/ makeMap(
   'key,ref,' +
   'onVnodeBeforeMount,onVnodeMounted,' +
@@ -195,4 +197,21 @@ export const toNumber = (val: any): any => {
   const n = parseFloat(val)
   // NaN返回val,否则返回数值n
   return isNaN(n) ? val : n
+}
+
+let _globalThis: any
+export const getGlobalThis = (): any => {
+  return (
+    _globalThis ||
+    (_globalThis =
+      typeof globalThis !== 'undefined'
+        ? globalThis
+        : typeof self !== 'undefined'
+          ? self
+          : typeof window !== 'undefined'
+            ? window
+            : typeof global !== 'undefined'
+              ? global
+              : {})
+  )
 }

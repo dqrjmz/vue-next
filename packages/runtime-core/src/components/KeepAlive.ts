@@ -1,5 +1,5 @@
-import {
-  Component,
+﻿import {
+  ConcreteComponent,
   getCurrentInstance,
   FunctionalComponent,
   SetupContext,
@@ -33,7 +33,7 @@ import {
   invokeVNodeHook
 } from '../renderer'
 import { setTransitionHooks } from './BaseTransition'
-import { ComponentRenderContext } from '../componentProxy'
+import { ComponentRenderContext } from '../componentPublicInstance'
 
 type MatchPattern = string | RegExp | string[] | RegExp[]
 
@@ -43,7 +43,7 @@ export interface KeepAliveProps {
   max?: number | string
 }
 
-type CacheKey = string | number | Component
+type CacheKey = string | number | ConcreteComponent
 type Cache = Map<CacheKey, VNode>
 type Keys = Set<CacheKey>
 
@@ -164,9 +164,7 @@ const KeepAliveImpl = {
      */
     function pruneCache(filter?: (name: string) => boolean) {
       cache.forEach((vnode, key) => {
-        // 获取vnode的type对象，并获取他的name,组件类型
-        const name = getName(vnode.type as Component)
-        // 组件存在 && 没有过滤函数 || 过滤中找不到
+        const name = getName(vnode.type as ConcreteComponent)
         if (name && (!filter || !filter(name))) {
           pruneCacheEntry(key)
         }
@@ -265,9 +263,7 @@ const KeepAliveImpl = {
         return vnode
       }
 
-      // vnode的类型 强转为组件
-      const comp = vnode.type as Component
-      // 获取组件名称 displayName name
+      const comp = vnode.type as ConcreteComponent
       const name = getName(comp)
 
       // 这个是<keep-alive :include="a,b,c" :exclude="" :max="1"></keep-alive>
@@ -340,12 +336,13 @@ const KeepAliveImpl = {
 // 还避免了在生成的d.ts文件中内联import()
 // also to avoid inline import() in generated d.ts files
 export const KeepAlive = (KeepAliveImpl as any) as {
+  __isKeepAlive: true
   new (): {
     $props: VNodeProps & KeepAliveProps
   }
 }
 
-function getName(comp: Component): string | void {
+function getName(comp: ConcreteComponent): string | void {
   return (comp as FunctionalComponent).displayName || comp.name
 }
 
@@ -426,14 +423,16 @@ function registerKeepAliveHook(
 }
 
 function injectToKeepAliveRoot(
-  hook: Function,
+  hook: Function & { __weh?: Function },
   type: LifecycleHooks,
   target: ComponentInternalInstance,
   keepAliveRoot: ComponentInternalInstance
 ) {
-  injectHook(type, hook, keepAliveRoot, true /* prepend */)
+  // injectHook wraps the original for error handling, so make sure to remove
+  // the wrapped version.
+  const injected = injectHook(type, hook, keepAliveRoot, true /* prepend */)
   onUnmounted(() => {
-    remove(keepAliveRoot[type]!, hook)
+    remove(keepAliveRoot[type]!, injected)
   }, target)
 }
 

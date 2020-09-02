@@ -13,11 +13,8 @@ import {
   getCurrentInstance,
   defineComponent
 } from '@vue/runtime-test'
-import { mockWarn } from '@vue/shared'
 
 describe('api: createApp', () => {
-  mockWarn()
-
   test('mount', () => {
     const Comp = defineComponent({
       props: {
@@ -460,7 +457,7 @@ describe('api: createApp', () => {
     app.config.optionMergeStrategies.foo = (a, b) => (a ? `${a},` : ``) + b
 
     app.mount(nodeOps.createElement('div'))
-    expect(merged!).toBe('global,extends,mixin,local')
+    expect(merged!).toBe('local,extends,mixin,global')
   })
 
   test('config.globalProperties', () => {

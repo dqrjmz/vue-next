@@ -11,14 +11,12 @@ import {
   transformVNodeArgs
 } from '../src/vnode'
 import { Data } from '../src/component'
-import { ShapeFlags, PatchFlags, mockWarn } from '@vue/shared'
+import { ShapeFlags, PatchFlags } from '@vue/shared'
 import { h, reactive, isReactive } from '../src'
 import { createApp, nodeOps, serializeInner } from '@vue/runtime-test'
 import { setCurrentRenderingInstance } from '../src/componentRenderUtils'
 
 describe('vnode', () => {
-  mockWarn()
-
   test('create with just tag', () => {
     const vnode = createVNode('p')
     expect(vnode.type).toBe('p')
@@ -132,10 +130,10 @@ describe('vnode', () => {
     })
 
     test('object', () => {
-      const vnode = createVNode('p', null, { foo: 'foo' })
+      const vnode = createVNode({}, null, { foo: 'foo' })
       expect(vnode.children).toMatchObject({ foo: 'foo' })
       expect(vnode.shapeFlag).toBe(
-        ShapeFlags.ELEMENT | ShapeFlags.SLOTS_CHILDREN
+        ShapeFlags.STATEFUL_COMPONENT | ShapeFlags.SLOTS_CHILDREN
       )
     })
 
@@ -265,6 +263,56 @@ describe('vnode', () => {
     expect(cloned6.ref).toEqual([mockInstance2, 'bar'])
 
     setCurrentRenderingInstance(null)
+  })
+
+  test('cloneVNode class normalization', () => {
+    const vnode = createVNode('div')
+    const expectedProps = {
+      class: 'a b'
+    }
+    expect(cloneVNode(vnode, { class: 'a b' }).props).toMatchObject(
+      expectedProps
+    )
+    expect(cloneVNode(vnode, { class: ['a', 'b'] }).props).toMatchObject(
+      expectedProps
+    )
+    expect(
+      cloneVNode(vnode, { class: { a: true, b: true } }).props
+    ).toMatchObject(expectedProps)
+    expect(
+      cloneVNode(vnode, { class: [{ a: true, b: true }] }).props
+    ).toMatchObject(expectedProps)
+  })
+
+  test('cloneVNode style normalization', () => {
+    const vnode = createVNode('div')
+    const expectedProps = {
+      style: {
+        color: 'blue',
+        width: '300px'
+      }
+    }
+    expect(
+      cloneVNode(vnode, { style: 'color: blue; width: 300px;' }).props
+    ).toMatchObject(expectedProps)
+    expect(
+      cloneVNode(vnode, {
+        style: {
+          color: 'blue',
+          width: '300px'
+        }
+      }).props
+    ).toMatchObject(expectedProps)
+    expect(
+      cloneVNode(vnode, {
+        style: [
+          {
+            color: 'blue',
+            width: '300px'
+          }
+        ]
+      }).props
+    ).toMatchObject(expectedProps)
   })
 
   describe('mergeProps', () => {

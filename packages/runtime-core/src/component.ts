@@ -1,24 +1,25 @@
-import { VNode, VNodeChild, isVNode } from './vnode'
+﻿import { VNode, VNodeChild, isVNode } from './vnode'
 import {
-  reactive,
   ReactiveEffect,
   pauseTracking,
   resetTracking,
-  shallowReadonly
+  shallowReadonly,
+  proxyRefs
 } from '@vue/reactivity'
 import {
-  CreateComponentPublicInstance,
   ComponentPublicInstance,
   PublicInstanceProxyHandlers,
   RuntimeCompiledPublicInstanceProxyHandlers,
   createRenderContext,
   exposePropsOnRenderContext,
-  exposeSetupStateOnRenderContext
-} from './componentProxy'
+  exposeSetupStateOnRenderContext,
+  ComponentPublicInstanceConstructor
+} from './componentPublicInstance'
 import {
   ComponentPropsOptions,
   NormalizedPropsOptions,
-  initProps
+  initProps,
+  normalizePropsOptions
 } from './componentProps'
 import { Slots, initSlots, InternalSlots } from './componentSlots'
 import { warn } from './warning'
@@ -30,7 +31,8 @@ import {
   EmitsOptions,
   ObjectEmitsOptions,
   EmitFn,
-  emit
+  emit,
+  normalizeEmitsOptions
 } from './componentEmits'
 import {
   EMPTY_OBJ,
@@ -49,7 +51,7 @@ import {
   markAttrsAccessed
 } from './componentRenderUtils'
 import { startMeasure, endMeasure } from './profiling'
-import { componentAdded } from './devtools'
+import { devtoolsComponentAdded } from './devtools'
 
 export type Data = Record<string, unknown>
 
@@ -72,11 +74,11 @@ export interface ComponentInternalOptions {
   /**
    * @internal
    */
-  __props?: NormalizedPropsOptions | []
+  __props?: Record<number, NormalizedPropsOptions>
   /**
    * @internal
    */
-  __emits?: ObjectEmitsOptions
+  __emits?: Record<number, ObjectEmitsOptions | null>
   /**
    * @internal
    */
@@ -110,22 +112,19 @@ export interface ClassComponent {
   __vccOpts: ComponentOptions
 }
 
-// 函数是组件 | 选项组件
-export type Component = ComponentOptions | FunctionalComponent<any>
+/**
+ * Concrete component type matches its actual value: it's either an options
+ * object, or a function. Use this where the code expects to work with actual
+ * values, e.g. checking if its a function or not. This is mostly for internal
+ * implementation code.
+ */
+export type ConcreteComponent = ComponentOptions | FunctionalComponent<any, any>
 
-// A type used in public APIs where a component type is expected.
-// The constructor type is an artificial type returned by defineComponent().
-export type PublicAPIComponent =
-  | Component
-  | {
-      new (...args: any[]): CreateComponentPublicInstance<
-        any,
-        any,
-        any,
-        any,
-        any
-      >
-    }
+/**
+ * A type used in public APIs where a component type is expected.
+ * The constructor type is an artificial type returned by defineComponent().
+ */
+export type Component = ConcreteComponent | ComponentPublicInstanceConstructor
 
 export { ComponentOptions }
 
@@ -176,7 +175,7 @@ export type InternalRenderFunction = {
  */
 export interface ComponentInternalInstance {
   uid: number
-  type: Component
+  type: ConcreteComponent
   parent: ComponentInternalInstance | null
   root: ComponentInternalInstance
   appContext: AppContext
@@ -226,19 +225,32 @@ export interface ComponentInternalInstance {
   renderCache: (Function | VNode)[]
 
   /**
-   * Asset hashes that prototypally inherits app-level asset hashes for fast
-   * resolution
+   * Resolved component registry, only for components with mixins or extends
    * @internal
    */
-  components: Record<string, Component>
+  components: Record<string, ConcreteComponent> | null
   /**
+   * Resolved directive registry, only for components with mixins or extends
    * @internal
    */
-  directives: Record<string, Directive>
+  directives: Record<string, Directive> | null
+  /**
+   * reoslved props options
+   * @internal
+   */
+  propsOptions: NormalizedPropsOptions
+  /**
+   * resolved emits options
+   * @internal
+   */
+  emitsOptions: ObjectEmitsOptions | null
 
   // the rest are only for stateful components ---------------------------------
 
-  // main proxy that serves as the public instance (`this`)
+  /**
+   * main proxy that serves as the public instance (`this`)
+   * @internal
+   */
   proxy: ComponentPublicInstance | null
 
   /**
@@ -255,14 +267,17 @@ export interface ComponentInternalInstance {
    */
   ctx: Data
 
-  // internal state
+  // state
   data: Data
   props: Data
   attrs: Data
   slots: InternalSlots
   refs: Data
   emit: EmitFn
-  // used for keeping track of .once event handlers on components
+  /**
+   * used for keeping track of .once event handlers on components
+   * @internal
+   */
   emitted: Record<string, boolean> | null
 
   /**
@@ -270,6 +285,11 @@ export interface ComponentInternalInstance {
    * @internal
    */
   setupState: Data
+  /**
+   * devtools access to additional info
+   * @internal
+   */
+  devtoolsRawSetupState?: any
   /**
    * @internal
    */
@@ -364,17 +384,17 @@ export function createComponentInstance(
   parent: ComponentInternalInstance | null,
   suspense: SuspenseBoundary | null
 ) {
+  const type = vnode.type as ConcreteComponent
   // inherit parent app context - or - if root, adopt from root vnode
   const appContext =
     (parent ? parent.appContext : vnode.appContext) || emptyAppContext
-    // 组件内部实例
   const instance: ComponentInternalInstance = {
     uid: uid++,
     vnode,
+    type,
     parent,
     appContext,
-    type: vnode.type as Component, //虚拟节点类型
-    root: null!, // set later so it can point to itself
+    root: null!, // to be immediately set
     next: null,
     subTree: null!, // will be set synchronously right after creation
     update: null!, // will be set synchronously right after creation
@@ -386,6 +406,18 @@ export function createComponentInstance(
     accessCache: null!,
     renderCache: [],
 
+    // local resovled assets
+    components: null,
+    directives: null,
+
+    // resolved props and emits options
+    propsOptions: normalizePropsOptions(type, appContext),
+    emitsOptions: normalizeEmitsOptions(type, appContext),
+
+    // emit
+    emit: null as any, // to be set immediately
+    emitted: null,
+
     // state
     ctx: EMPTY_OBJ,
     data: EMPTY_OBJ,
@@ -395,10 +427,6 @@ export function createComponentInstance(
     refs: EMPTY_OBJ,
     setupState: EMPTY_OBJ,
     setupContext: null,
-
-    // per-instance asset storage (mutable during options resolution)
-    components: Object.create(appContext.components),
-    directives: Object.create(appContext.directives),
 
     // suspense related
     suspense,
@@ -422,9 +450,7 @@ export function createComponentInstance(
     a: null,
     rtg: null,
     rtc: null,
-    ec: null,
-    emit: null as any, // to be set immediately
-    emitted: null
+    ec: null
   }
   if (__DEV__) {
     // 创建渲染上下文
@@ -435,7 +461,9 @@ export function createComponentInstance(
   instance.root = parent ? parent.root : instance
   instance.emit = emit.bind(null, instance)
 
-  __DEV__ && componentAdded(instance)
+  if (__DEV__ || __FEATURE_PROD_DEVTOOLS__) {
+    devtoolsComponentAdded(instance)
+  }
 
   return instance
 }
@@ -620,8 +648,10 @@ export function handleSetupResult(
     // setup returned bindings.
     // 假设从模板编译一个渲染函数现在
     // assuming a render function compiled from template is present.
-    // 将对象进行响应式处理
-    instance.setupState = reactive(setupResult)
+    if (__DEV__ || __FEATURE_PROD_DEVTOOLS__) {
+      instance.devtoolsRawSetupState = setupResult
+    }
+    instance.setupState = proxyRefs(setupResult)
     if (__DEV__) {
       exposeSetupStateOnRenderContext(instance)
     }
@@ -671,7 +701,7 @@ function finishComponentSetup(
     }
     // 没有渲染函数
   } else if (!instance.render) {
-    // 编译函数存在 && 组件模板存在 && 组件配置选项中没有render
+    // could be set from setup()
     if (compile && Component.template && !Component.render) {
       // 开始测量性能
       if (__DEV__) {
@@ -679,33 +709,12 @@ function finishComponentSetup(
       }
       // 开始编译,编译出来render function
       Component.render = compile(Component.template, {
-        // 自定义元素
-        isCustomElement: instance.appContext.config.isCustomElement || NO
+        isCustomElement: instance.appContext.config.isCustomElement,
+        delimiters: Component.delimiters
       })
 
       if (__DEV__) {
         endMeasure(instance, `compile`)
-      }
-      // mark the function as runtime compiled
-      ;(Component.render as InternalRenderFunction)._rc = true
-    }
-
-    if (__DEV__ && !Component.render) {
-      /* istanbul ignore if */
-      if (!compile && Component.template) {
-        warn(
-          `Component provided template option but ` +
-            `runtime compilation is not supported in this build of Vue.` +
-            (__ESM_BUNDLER__
-              ? ` Configure your bundler to alias "vue" to "vue/dist/vue.esm-bundler.js".`
-              : __ESM_BROWSER__
-                ? ` Use "vue.esm-browser.js" instead.`
-                : __GLOBAL__
-                  ? ` Use "vue.global.js" instead.`
-                  : ``) /* should not happen */
-        )
-      } else {
-        warn(`Component is missing template or render function.`)
       }
     }
 
@@ -725,13 +734,31 @@ function finishComponentSetup(
   }
 
   // support for 2.x options
-  if (__FEATURE_OPTIONS__) {
+  if (__FEATURE_OPTIONS_API__) {
     currentInstance = instance
     applyOptions(instance, Component)
     currentInstance = null
   }
 
-  // console.log(instance);
+  // warn missing template/render
+  if (__DEV__ && !Component.render && instance.render === NOOP) {
+    /* istanbul ignore if */
+    if (!compile && Component.template) {
+      warn(
+        `Component provided template option but ` +
+          `runtime compilation is not supported in this build of Vue.` +
+          (__ESM_BUNDLER__
+            ? ` Configure your bundler to alias "vue" to "vue/dist/vue.esm-bundler.js".`
+            : __ESM_BROWSER__
+              ? ` Use "vue.esm-browser.js" instead.`
+              : __GLOBAL__
+                ? ` Use "vue.global.js" instead.`
+                : ``) /* should not happen */
+      )
+    } else {
+      warn(`Component is missing template or render function.`)
+    }
+  }
 }
 
 const attrHandlers: ProxyHandler<Data> = {
@@ -802,7 +829,7 @@ const classify = (str: string): string =>
 /* istanbul ignore next */
 export function formatComponentName(
   instance: ComponentInternalInstance | null,
-  Component: Component,
+  Component: ConcreteComponent,
   isRoot = false
 ): string {
   let name = isFunction(Component)
@@ -816,14 +843,19 @@ export function formatComponentName(
   }
 
   if (!name && instance && instance.parent) {
-    // try to infer the name based on local resolution
-    const registry = instance.parent.components
-    for (const key in registry) {
-      if (registry[key] === Component) {
-        name = key
-        break
+    // try to infer the name based on reverse resolution
+    const inferFromRegistry = (registry: Record<string, any> | undefined) => {
+      for (const key in registry) {
+        if (registry[key] === Component) {
+          return key
+        }
       }
     }
+    name =
+      inferFromRegistry(
+        instance.components ||
+          (instance.parent.type as ComponentOptions).components
+      ) || inferFromRegistry(instance.appContext.components)
   }
 
   return name ? classify(name) : isRoot ? `App` : `Anonymous`

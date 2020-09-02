@@ -29,6 +29,7 @@ beforeEach(() => {
 
 describe('vModel', () => {
   it('should work with text input', async () => {
+    const manualListener = jest.fn()
     const component = defineComponent({
       data() {
         return { value: null }
@@ -37,7 +38,10 @@ describe('vModel', () => {
         return [
           withVModel(
             h('input', {
-              'onUpdate:modelValue': setValue.bind(this)
+              'onUpdate:modelValue': setValue.bind(this),
+              onInput: () => {
+                manualListener(data.value)
+              }
             }),
             this.value
           )
@@ -54,6 +58,8 @@ describe('vModel', () => {
     triggerEvent('input', input)
     await nextTick()
     expect(data.value).toEqual('foo')
+    // #1931
+    expect(manualListener).toHaveBeenCalledWith('foo')
 
     data.value = 'bar'
     await nextTick()
@@ -603,5 +609,46 @@ describe('vModel', () => {
     await nextTick()
     expect(foo.selected).toEqual(true)
     expect(bar.selected).toEqual(true)
+  })
+
+  it('should work with composition session', async () => {
+    const component = defineComponent({
+      data() {
+        return { value: '' }
+      },
+      render() {
+        return [
+          withVModel(
+            h('input', {
+              'onUpdate:modelValue': setValue.bind(this)
+            }),
+            this.value
+          )
+        ]
+      }
+    })
+    render(h(component), root)
+
+    const input = root.querySelector('input')!
+    const data = root._vnode.component.data
+    expect(input.value).toEqual('')
+
+    //developer.mozilla.org/en-US/docs/Web/API/Element/compositionstart_event
+    //compositionstart event could be fired after a user starts entering a Chinese character using a Pinyin IME
+    input.value = '使用拼音'
+    triggerEvent('compositionstart', input)
+    await nextTick()
+    expect(data.value).toEqual('')
+
+    // input event has no effect during composition session
+    input.value = '使用拼音输入'
+    triggerEvent('input', input)
+    await nextTick()
+    expect(data.value).toEqual('')
+
+    // After compositionend event being fired, an input event will be automatically trigger
+    triggerEvent('compositionend', input)
+    await nextTick()
+    expect(data.value).toEqual('使用拼音输入')
   })
 })

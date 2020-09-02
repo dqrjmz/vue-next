@@ -1,4 +1,4 @@
-import { currentInstance } from './component'
+﻿import { currentInstance } from './component'
 import { currentRenderingInstance } from './componentRenderUtils'
 import { warn } from './warning'
 
@@ -56,8 +56,7 @@ export function inject(
   if (instance) {
     // 获取组件实例上的提供器
     const provides = instance.provides
-    // 判断依赖是否在提供器中
-    if (key in provides) {
+    if ((key as string | symbol) in provides) {
       // TS doesn't allow symbol as index type
       // 存在返回依赖，从提供器中获取依赖
       return provides[key as string]

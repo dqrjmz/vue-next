@@ -1,11 +1,11 @@
-import {
+﻿import {
   ComponentInternalInstance,
   LifecycleHooks,
   currentInstance,
   setCurrentInstance,
   isInSSRComponentSetup
 } from './component'
-import { ComponentPublicInstance } from './componentProxy'
+import { ComponentPublicInstance } from './componentPublicInstance'
 import { callWithAsyncErrorHandling, ErrorTypeStrings } from './errorHandling'
 import { warn } from './warning'
 import { capitalize } from '@vue/shared'
@@ -26,8 +26,7 @@ export function injectHook(
   hook: Function & { __weh?: Function },
   target: ComponentInternalInstance | null = currentInstance,
   prepend: boolean = false
-) {
-  // 没有组件实例
+): Function | undefined {
   if (target) {
     // 获取组件的钩子函数
     const hooks = target[type] || (target[type] = [])
@@ -64,8 +63,8 @@ export function injectHook(
     } else {
       hooks.push(wrappedHook)
     }
-  } else if (__DEV__) { //开发中
-    // 整理钩子函数名称
+    return wrappedHook
+  } else if (__DEV__) {
     const apiName = `on${capitalize(
       // 将后缀hook替换为''
       ErrorTypeStrings[type].replace(/ hook$/, '')

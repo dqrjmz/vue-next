@@ -1,5 +1,10 @@
-import { currentRenderingInstance } from '../componentRenderUtils'
-import { currentInstance, Component, FunctionalComponent } from '../component'
+﻿import { currentRenderingInstance } from '../componentRenderUtils'
+import {
+  currentInstance,
+  ConcreteComponent,
+  FunctionalComponent,
+  ComponentOptions
+} from '../component'
 import { Directive } from '../directives'
 import { camelize, capitalize, isString } from '@vue/shared'
 import { warn } from '../warning'
@@ -11,11 +16,9 @@ const DIRECTIVES = 'directives'
 /**
  * @private
  */
-/**
- * 解析组件
- * @param name 组件名称
- */
-export function resolveComponent(name: string): Component | string | undefined {
+export function resolveComponent(
+  name: string
+): ConcreteComponent | string | undefined {
   return resolveAsset(COMPONENTS, name) || name
 }
 
@@ -58,7 +61,7 @@ function resolveAsset(
   type: typeof COMPONENTS,
   name: string,
   warnMissing?: boolean
-): Component | undefined
+): ConcreteComponent | undefined
 // overload 2: directives
 function resolveAsset(
   type: typeof DIRECTIVES,
@@ -80,31 +83,28 @@ function resolveAsset(
   const instance = currentRenderingInstance || currentInstance
   // 存在实例
   if (instance) {
-    let camelized, capitalized
-    // 获取资源的容器对象
-    const registry = instance[type]
-    // 获取容器对象中，指定名称的元素，或者将名称进行变换
-    let res =
-      registry[name] ||
-      registry[(camelized = camelize(name))] ||
-      registry[(capitalized = capitalize(camelized))]
+    const Component = instance.type
 
-      // 没有指定的资产元素 && 是组件类型
-    if (!res && type === COMPONENTS) {
-      // 组件实例的type属性，组件的配置选项参数
-      const self = instance.type
-      // 组件名称
-      const selfName = (self as FunctionalComponent).displayName || self.name
-      // 名称相同，就将组件选项参数赋值给res
+    // self name has highest priority
+    if (type === COMPONENTS) {
+      const selfName =
+        (Component as FunctionalComponent).displayName || Component.name
       if (
         selfName &&
         (selfName === name ||
-          selfName === camelized ||
-          selfName === capitalized)
+          selfName === camelize(name) ||
+          selfName === capitalize(camelize(name)))
       ) {
-        res = self
+        return Component
       }
     }
+
+    const res =
+      // local registration
+      // check instance[type] first for components with mixin or extends.
+      resolve(instance[type] || (Component as ComponentOptions)[type], name) ||
+      // global registration
+      resolve(instance.appContext[type], name)
     if (__DEV__ && warnMissing && !res) {
       warn(`Failed to resolve ${type.slice(0, -1)}: ${name}`)
     }
@@ -116,4 +116,13 @@ function resolveAsset(
         `can only be used in render() or setup().`
     )
   }
+}
+
+function resolve(registry: Record<string, any> | undefined, name: string) {
+  return (
+    registry &&
+    (registry[name] ||
+      registry[camelize(name)] ||
+      registry[capitalize(camelize(name))])
+  )
 }

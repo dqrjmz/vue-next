@@ -263,6 +263,34 @@ describe('compiler: v-for', () => {
         })
       )
     })
+
+    test('<template v-for> key placement', () => {
+      const onError = jest.fn()
+      parseWithForTransform(
+        `
+      <template v-for="item in items">
+        <div :key="item.id"/>
+      </template>`,
+        { onError }
+      )
+
+      expect(onError).toHaveBeenCalledTimes(1)
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: ErrorCodes.X_V_FOR_TEMPLATE_KEY_PLACEMENT
+        })
+      )
+
+      // should not warn on nested v-for keys
+      parseWithForTransform(
+        `
+      <template v-for="item in items">
+        <div v-for="c in item.children" :key="c.id"/>
+      </template>`,
+        { onError }
+      )
+      expect(onError).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('source location', () => {
@@ -737,6 +765,29 @@ describe('compiler: v-for', () => {
         returns: {
           type: NodeTypes.JS_CALL_EXPRESSION,
           callee: RENDER_SLOT
+        }
+      })
+      expect(generate(root).code).toMatchSnapshot()
+    })
+
+    // #1907
+    test('template v-for key injection with single child', () => {
+      const {
+        root,
+        node: { codegenNode }
+      } = parseWithForTransform(
+        '<template v-for="item in items" :key="item.id"><span :id="item.id" /></template>'
+      )
+      expect(assertSharedCodegen(codegenNode, true)).toMatchObject({
+        source: { content: `items` },
+        params: [{ content: `item` }],
+        innerVNodeCall: {
+          type: NodeTypes.VNODE_CALL,
+          tag: `"span"`,
+          props: createObjectMatcher({
+            key: '[item.id]',
+            id: '[item.id]'
+          })
         }
       })
       expect(generate(root).code).toMatchSnapshot()

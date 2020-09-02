@@ -7,7 +7,7 @@
   ReactiveEffectOptions,
   isReactive
 } from '@vue/reactivity'
-import { queueJob } from './scheduler'
+import { SchedulerJob, queuePreFlushCb } from './scheduler'
 import {
   EMPTY_OBJ,
   isObject,
@@ -173,9 +173,13 @@ function doWatch(
   }
 
   let getter: () => any
-  // 是数组
-  if (isArray(source)) {
-
+  const isRefSource = isRef(source)
+  if (isRefSource) {
+    getter = () => (source as Ref).value
+  } else if (isReactive(source)) {
+    getter = () => source
+    deep = true
+  } else if (isArray(source)) {
     getter = () =>
       source.map(s => {
         if (isRef(s)) {
@@ -188,10 +192,6 @@ function doWatch(
           __DEV__ && warnInvalidSource(s)
         }
       })
-    getter = () => source.value
-  } else if (isReactive(source)) {
-    getter = () => source
-    deep = true
   } else if (isFunction(source)) {
     if (cb) {
       // getter with cb
@@ -247,14 +247,14 @@ function doWatch(
   }
 
   let oldValue = isArray(source) ? [] : INITIAL_WATCHER_VALUE
-  const job = () => {
+  const job: SchedulerJob = () => {
     if (!runner.active) {
       return
     }
     if (cb) {
       // watch(source, cb)
       const newValue = runner()
-      if (deep || hasChanged(newValue, oldValue)) {
+      if (deep || isRefSource || hasChanged(newValue, oldValue)) {
         // cleanup before running cb again
         if (cleanup) {
           cleanup()
@@ -273,6 +273,10 @@ function doWatch(
     }
   }
 
+  // important: mark the job as a watcher callback so that scheduler knows it
+  // it is allowed to self-trigger (#1727)
+  job.allowRecurse = !!cb
+
   let scheduler: (job: () => any) => void
   if (flush === 'sync') {
     scheduler = job
@@ -281,7 +285,7 @@ function doWatch(
     job.id = -1
     scheduler = () => {
       if (!instance || instance.isMounted) {
-        queueJob(job)
+        queuePreFlushCb(job)
       } else {
         // with 'pre' option, the first call must happen before
         // the component is mounted so it is called synchronously.
@@ -339,7 +343,9 @@ function traverse(value: unknown, seen: Set<unknown> = new Set()) {
     return value
   }
   seen.add(value)
-  if (isArray(value)) {
+  if (isRef(value)) {
+    traverse(value.value, seen)
+  } else if (isArray(value)) {
     for (let i = 0; i < value.length; i++) {
       traverse(value[i], seen)
     }

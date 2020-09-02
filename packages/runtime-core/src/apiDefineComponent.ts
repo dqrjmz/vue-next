@@ -1,4 +1,4 @@
-import {
+﻿import {
   ComputedOptions,
   MethodOptions,
   ComponentOptionsWithoutProps,
@@ -16,7 +16,7 @@ import {
 import {
   CreateComponentPublicInstance,
   ComponentPublicInstanceConstructor
-} from './componentProxy'
+} from './componentPublicInstance'
 import { ExtractPropTypes, ComponentPropsOptions } from './componentProps'
 import { EmitsOptions } from './componentEmits'
 import { isFunction } from '@vue/shared'
@@ -189,7 +189,8 @@ export function defineComponent<
     Extends,
     E,
     VNodeProps & AllowedComponentProps & ComponentCustomProps
-  >
+  > &
+    Readonly<ExtractPropTypes<PropsOptions>>
 > &
   ComponentOptionsWithObjectProps<
     PropsOptions,
@@ -206,6 +207,5 @@ export function defineComponent<
 // implementation, close to no-op 实现， 
 // 使用方式，直接注册到
 export function defineComponent(options: unknown) {
-  // options是否为函数，为函数，改为setup形式，否则直接返回options
-  return isFunction(options) ? { setup: options } : options
+  return isFunction(options) ? { setup: options, name: options.name } : options
 }

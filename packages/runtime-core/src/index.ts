@@ -8,6 +8,7 @@ export {
   readonly,
   // utilities
   unref,
+  proxyRefs,
   isRef,
   toRef,
   toRefs,
@@ -125,6 +126,7 @@ export {
   ComputedRef,
   WritableComputedRef,
   UnwrapRef,
+  ShallowUnwrapRef,
   WritableComputedOptions,
   ToRefs,
   DeepReadonly
@@ -157,6 +159,7 @@ export {
 } from './vnode'
 export {
   Component,
+  ConcreteComponent,
   FunctionalComponent,
   ComponentInternalInstance,
   SetupContext,
@@ -176,7 +179,7 @@ export {
 export {
   ComponentPublicInstance,
   ComponentCustomProperties
-} from './componentProxy'
+} from './componentPublicInstance'
 export {
   Renderer,
   RendererNode,

@@ -1,21 +1,19 @@
-import {
-  PublicAPIComponent,
+﻿import {
   Component,
+  ConcreteComponent,
   currentInstance,
   ComponentInternalInstance,
   isInSSRComponentSetup
 } from './component'
 import { isFunction, isObject } from '@vue/shared'
-import { ComponentPublicInstance } from './componentProxy'
+import { ComponentPublicInstance } from './componentPublicInstance'
 import { createVNode } from './vnode'
 import { defineComponent } from './apiDefineComponent'
 import { warn } from './warning'
 import { ref } from '@vue/reactivity'
 import { handleError, ErrorCodes } from './errorHandling'
 
-export type AsyncComponentResolveResult<T = PublicAPIComponent> =
-  | T
-  | { default: T } // es modules
+export type AsyncComponentResolveResult<T = Component> = T | { default: T } // es modules
 
 export type AsyncComponentLoader<T = any> = () => Promise<
   AsyncComponentResolveResult<T>
@@ -23,8 +21,8 @@ export type AsyncComponentLoader<T = any> = () => Promise<
 
 export interface AsyncComponentOptions<T = any> {
   loader: AsyncComponentLoader<T>
-  loadingComponent?: PublicAPIComponent
-  errorComponent?: PublicAPIComponent
+  loadingComponent?: Component
+  errorComponent?: Component
   delay?: number
   timeout?: number
   suspensible?: boolean
@@ -41,7 +39,7 @@ export interface AsyncComponentOptions<T = any> {
  * @param source 
  */
 export function defineAsyncComponent<
-  T extends PublicAPIComponent = { new (): ComponentPublicInstance }
+  T extends Component = { new (): ComponentPublicInstance }
 >(source: AsyncComponentLoader<T> | AsyncComponentOptions<T>): T {
   // 为函数时
   if (isFunction(source)) {
@@ -66,10 +64,8 @@ export function defineAsyncComponent<
     onError: userOnError
   } = source
 
-  // 等待请求
-  let pendingRequest: Promise<Component> | null = null
-  // 完成
-  let resolvedComp: Component | undefined
+  let pendingRequest: Promise<ConcreteComponent> | null = null
+  let resolvedComp: ConcreteComponent | undefined
 
   let retries = 0
   // 请求失败后的重试
@@ -79,8 +75,8 @@ export function defineAsyncComponent<
     return load()
   }
 
-  const load = (): Promise<Component> => {
-    let thisRequest: Promise<Component>
+  const load = (): Promise<ConcreteComponent> => {
+    let thisRequest: Promise<ConcreteComponent>
     return (
       pendingRequest ||
       (thisRequest = pendingRequest = loader()
@@ -154,7 +150,9 @@ export function defineAsyncComponent<
             onError(err)
             return () =>
               errorComponent
-                ? createVNode(errorComponent as Component, { error: err })
+                ? createVNode(errorComponent as ConcreteComponent, {
+                    error: err
+                  })
                 : null
           })
       }
@@ -201,11 +199,11 @@ export function defineAsyncComponent<
         if (loaded.value && resolvedComp) {
           return createInnerComp(resolvedComp, instance)
         } else if (error.value && errorComponent) {
-          return createVNode(errorComponent as Component, {
+          return createVNode(errorComponent as ConcreteComponent, {
             error: error.value
           })
         } else if (loadingComponent && !delayed.value) {
-          return createVNode(loadingComponent as Component)
+          return createVNode(loadingComponent as ConcreteComponent)
         }
       }
     }
@@ -213,7 +211,7 @@ export function defineAsyncComponent<
 }
 
 function createInnerComp(
-  comp: Component,
+  comp: ConcreteComponent,
   { vnode: { props, children } }: ComponentInternalInstance
 ) {
   return createVNode(comp, props, children)

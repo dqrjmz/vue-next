@@ -1,5 +1,5 @@
 import { TrackOpTypes, TriggerOpTypes } from './operations'
-import { EMPTY_OBJ, isArray } from '@vue/shared'
+import { EMPTY_OBJ, isArray, isIntegerKey } from '@vue/shared'
 
 // The main WeakMap that stores {target -> key -> dep} connections.
 // Conceptually, it's easier to think of a dependency as a Dep class
@@ -199,12 +199,8 @@ export function trigger(
   const add = (effectsToAdd: Set<ReactiveEffect> | undefined) => {
     if (effectsToAdd) {
       effectsToAdd.forEach(effect => {
-        if (effect !== activeEffect || !shouldTrack) {
+        if (effect !== activeEffect) {
           effects.add(effect)
-        } else {
-          // the effect mutated its own dependency during its execution.
-          // this can be caused by operations like foo.value++
-          // do not trigger or we end in an infinite loop
         }
       })
     }
@@ -226,16 +222,17 @@ export function trigger(
       add(depsMap.get(key))
     }
     // also run for iteration key on ADD | DELETE | Map.SET
-    const isAddOrDelete =
-      type === TriggerOpTypes.ADD ||
+    const shouldTriggerIteration =
+      (type === TriggerOpTypes.ADD &&
+        (!isArray(target) || isIntegerKey(key))) ||
       (type === TriggerOpTypes.DELETE && !isArray(target))
     if (
-      isAddOrDelete ||
+      shouldTriggerIteration ||
       (type === TriggerOpTypes.SET && target instanceof Map)
     ) {
       add(depsMap.get(isArray(target) ? 'length' : ITERATE_KEY))
     }
-    if (isAddOrDelete && target instanceof Map) {
+    if (shouldTriggerIteration && target instanceof Map) {
       add(depsMap.get(MAP_KEY_ITERATE_KEY))
     }
   }

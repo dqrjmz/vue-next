@@ -1,4 +1,4 @@
-import {
+﻿import {
   createRenderer,
   createHydrationRenderer,
   warn,
@@ -92,7 +92,7 @@ export const createApp = ((...args) => {
     const proxy = mount(container)
     // 移除挂载店的v-cloak属性,放置闪烁
     container.removeAttribute('v-cloak')
-    
+    container.setAttribute('data-v-app', '')
     return proxy
   }
 

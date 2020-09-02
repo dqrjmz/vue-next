@@ -1,11 +1,11 @@
-import {
-  Component,
+﻿import {
+  ConcreteComponent,
   Data,
   validateComponentName,
-  PublicAPIComponent
+  Component
 } from './component'
 import { ComponentOptions } from './componentOptions'
-import { ComponentPublicInstance } from './componentProxy'
+import { ComponentPublicInstance } from './componentPublicInstance'
 import { Directive, validateDirectiveName } from './directives'
 import { RootRenderFunction } from './renderer'
 import { InjectionKey } from './apiInject'
@@ -13,7 +13,7 @@ import { isFunction, NO, isObject } from '@vue/shared'
 import { warn } from './warning'
 import { createVNode, cloneVNode, VNode } from './vnode'
 import { RootHydrateFunction } from './hydration'
-import { initApp, appUnmounted } from './devtools'
+import { devtoolsInitApp, devtoolsUnmountApp } from './devtools'
 import { version } from '.'
 
 export interface App<HostElement = any> {
@@ -21,8 +21,8 @@ export interface App<HostElement = any> {
   config: AppConfig
   use(plugin: Plugin, ...options: any[]): this
   mixin(mixin: ComponentOptions): this
-  component(name: string): PublicAPIComponent | undefined
-  component(name: string, component: PublicAPIComponent): this
+  component(name: string): Component | undefined
+  component(name: string, component: Component): this
   directive(name: string): Directive | undefined
   directive(name: string, directive: Directive): this
   mount(
@@ -32,8 +32,9 @@ export interface App<HostElement = any> {
   unmount(rootContainer: HostElement | string): void
   provide<T>(key: InjectionKey<T> | string, value: T): this
 
-  // internal. We need to expose these for the server-renderer and devtools
-  _component: Component
+  // internal, but we need to expose these for the server-renderer and devtools
+  _uid: number
+  _component: ConcreteComponent
   _props: Data | null
   _container: HostElement | null
   _context: AppContext
@@ -50,7 +51,6 @@ export interface AppConfig {
   // @private
   readonly isNativeTag?: (tag: string) => boolean
 
-  devtools: boolean
   performance: boolean
   optionMergeStrategies: Record<string, OptionMergeFunction>
   globalProperties: Record<string, any>
@@ -68,15 +68,13 @@ export interface AppConfig {
 }
 
 export interface AppContext {
+  app: App // for devtools
   config: AppConfig
   mixins: ComponentOptions[]
-  components: Record<string, PublicAPIComponent>
+  components: Record<string, Component>
   directives: Record<string, Directive>
   provides: Record<string | symbol, any>
   reload?: () => void // HMR only
-
-  // internal for devtools
-  __app?: App
 }
 
 type PluginInstallFunction = (app: App, ...options: any[]) => any
@@ -91,10 +89,9 @@ export type Plugin =
  */
 export function createAppContext(): AppContext {
   return {
-    // devtools
+    app: null as any,
     config: {
       isNativeTag: NO,
-      devtools: true,
       performance: false,
       globalProperties: {},
       optionMergeStrategies: {},
@@ -110,15 +107,12 @@ export function createAppContext(): AppContext {
 }
 
 export type CreateAppFunction<HostElement> = (
-  rootComponent: PublicAPIComponent,
+  rootComponent: Component,
   rootProps?: Data | null
 ) => App<HostElement>
 
-/**
- * 创建app api
- * @param render 渲染器
- * @param hydrate 
- */
+let uid = 0
+
 export function createAppAPI<HostElement>(
   render: RootRenderFunction,
   hydrate?: RootHydrateFunction
@@ -146,9 +140,9 @@ export function createAppAPI<HostElement>(
     // app没有被安装
     let isMounted = false
 
-    // 创建的app对象
-    const app: App = {
-      _component: rootComponent as Component,
+    const app: App = (context.app = {
+      _uid: uid++,
+      _component: rootComponent as ConcreteComponent,
       _props: rootProps,
       _container: null,
       // app的上下文
@@ -198,7 +192,7 @@ export function createAppAPI<HostElement>(
        * @param mixin 
        */
       mixin(mixin: ComponentOptions) {
-        if (__FEATURE_OPTIONS__) {
+        if (__FEATURE_OPTIONS_API__) {
           if (!context.mixins.includes(mixin)) {
             context.mixins.push(mixin)
           } else if (__DEV__) {
@@ -213,12 +207,7 @@ export function createAppAPI<HostElement>(
         return app
       },
 
-      /**
-       * 注册或者搜索组件
-       * @param name 组件名称
-       * @param component 组件配置选项
-       */
-      component(name: string, component?: PublicAPIComponent): any {
+      component(name: string, component?: Component): any {
         if (__DEV__) {
           validateComponentName(name, context.config)
         }
@@ -266,10 +255,10 @@ export function createAppAPI<HostElement>(
       mount(rootContainer: HostElement, isHydrate?: boolean): any {
         // 没有被安装
         if (!isMounted) {
-          // 创建组件的vnode，根组件的vnode
-          const vnode = createVNode(rootComponent as Component, rootProps)
-
-          // 存储app上下文到根vnode
+          const vnode = createVNode(
+            rootComponent as ConcreteComponent,
+            rootProps
+          )
           // store app context on the root VNode.
           // 这个将在初始化安装时，被设置在根实例上
           // this will be set on the root instance on initial mount.
@@ -292,9 +281,13 @@ export function createAppAPI<HostElement>(
           isMounted = true
           // 在app上添加_container属性作为 根挂载点的引用
           app._container = rootContainer
-          // 初始化app, Vue的版本
-          __DEV__ && initApp(app, version)
-          // 
+          // for devtools and telemetry
+          ;(rootContainer as any).__vue_app__ = app
+
+          if (__DEV__ || __FEATURE_PROD_DEVTOOLS__) {
+            devtoolsInitApp(app, version)
+          }
+
           return vnode.component!.proxy
         } else if (__DEV__) {
           // 已经被安装过了 
@@ -315,8 +308,9 @@ export function createAppAPI<HostElement>(
         if (isMounted) {
           // vnode为空，说明组件为卸载操作
           render(null, app._container)
-          // 
-          __DEV__ && appUnmounted(app)
+          if (__DEV__ || __FEATURE_PROD_DEVTOOLS__) {
+            devtoolsUnmountApp(app)
+          }
         } else if (__DEV__) {
           // 不能卸载一个没有安装的app
           warn(`Cannot unmount an app that is not mounted.`)
@@ -329,7 +323,7 @@ export function createAppAPI<HostElement>(
        * @param value 
        */
       provide(key, value) {
-        if (__DEV__ && key in context.provides) {
+        if (__DEV__ && (key as string | symbol) in context.provides) {
           warn(
             `App already provides property with key "${String(key)}". ` +
               `It will be overwritten with the new value.`
@@ -342,9 +336,7 @@ export function createAppAPI<HostElement>(
 
         return app
       }
-    }
-    // app实例添加__app属性
-    context.__app = app
+    })
 
     return app
   }

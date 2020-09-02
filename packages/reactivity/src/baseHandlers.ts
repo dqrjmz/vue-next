@@ -1,4 +1,12 @@
-﻿import { reactive, readonly, toRaw, ReactiveFlags } from './reactive'
+﻿import {
+  reactive,
+  readonly,
+  toRaw,
+  ReactiveFlags,
+  Target,
+  readonlyMap,
+  reactiveMap
+} from './reactive'
 import { TrackOpTypes, TriggerOpTypes } from './operations'
 import { track, trigger, ITERATE_KEY } from './effect'
 import {
@@ -7,6 +15,7 @@ import {
   isSymbol,
   hasChanged,
   isArray,
+  isIntegerKey,
   extend
 } from '@vue/shared'
 import { isRef } from './ref'
@@ -54,18 +63,14 @@ const arrayInstrumentations: Record<string, Function> = {}
  * @param shallow 浅代理
  */
 function createGetter(isReadonly = false, shallow = false) {
-  // 目标对象，对象的键 代理对象
-  return function get(target: object, key: string | symbol, receiver: object) {
+  return function get(target: Target, key: string | symbol, receiver: object) {
     if (key === ReactiveFlags.IS_REACTIVE) {
       return !isReadonly
     } else if (key === ReactiveFlags.IS_READONLY) {
       return isReadonly
     } else if (
       key === ReactiveFlags.RAW &&
-      receiver ===
-        (isReadonly
-          ? (target as any)[ReactiveFlags.READONLY]
-          : (target as any)[ReactiveFlags.REACTIVE])
+      receiver === (isReadonly ? readonlyMap : reactiveMap).get(target)
     ) {
       return target
     }
@@ -79,9 +84,10 @@ function createGetter(isReadonly = false, shallow = false) {
 
     const res = Reflect.get(target, key, receiver)
 
+    const keyIsSymbol = isSymbol(key)
     if (
-      isSymbol(key)
-        ? builtInSymbols.has(key)
+      keyIsSymbol
+        ? builtInSymbols.has(key as symbol)
         : key === `__proto__` || key === `__v_isRef`
     ) {
       return res
@@ -97,8 +103,9 @@ function createGetter(isReadonly = false, shallow = false) {
     }
 
     if (isRef(res)) {
-      // ref unwrapping, only for Objects, not for Arrays.
-      return targetIsArray ? res : res.value
+      // ref unwrapping - does not apply for Array + integer key.
+      const shouldUnwrap = !targetIsArray || !isIntegerKey(key)
+      return shouldUnwrap ? res.value : res
     }
 
     if (isObject(res)) {
@@ -133,7 +140,10 @@ function createSetter(shallow = false) {
       // in shallow mode, objects are set as-is regardless of reactive or not
     }
 
-    const hadKey = hasOwn(target, key)
+    const hadKey =
+      isArray(target) && isIntegerKey(key)
+        ? Number(key) < target.length
+        : hasOwn(target, key)
     const result = Reflect.set(target, key, value, receiver)
     // don't trigger if target is something up in the prototype chain of original
     if (target === toRaw(receiver)) {
@@ -159,7 +169,9 @@ function deleteProperty(target: object, key: string | symbol): boolean {
 
 function has(target: object, key: string | symbol): boolean {
   const result = Reflect.has(target, key)
-  track(target, TrackOpTypes.HAS, key)
+  if (!isSymbol(key) || !builtInSymbols.has(key)) {
+    track(target, TrackOpTypes.HAS, key)
+  }
   return result
 }
 
@@ -178,8 +190,6 @@ export const mutableHandlers: ProxyHandler<object> = {
 
 export const readonlyHandlers: ProxyHandler<object> = {
   get: readonlyGet,
-  has,
-  ownKeys,
   set(target, key) {
     if (__DEV__) {
       console.warn(

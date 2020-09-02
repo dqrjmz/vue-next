@@ -1,29 +1,54 @@
 ﻿import { ErrorCodes, callWithErrorHandling } from './errorHandling'
 import { isArray } from '@vue/shared'
 
-// 工作实例类型
-export interface Job {
+export interface SchedulerJob {
   (): void
+  /**
+   * unique job id, only present on raw effects, e.g. component render effect
+   */
   id?: number
+  /**
+   * Indicates whether the job is allowed to recursively trigger itself.
+   * By default, a job cannot trigger itself because some built-in method calls,
+   * e.g. Array.prototype.push actually performs reads as well (#1740) which
+   * can lead to confusing infinite loops.
+   * The allowed cases are component update functions and watch callbacks.
+   * Component update functions may update child component props, which in turn
+   * trigger flush: "pre" watch callbacks that mutates state that the parent
+   * relies on (#1801). Watch callbacks doesn't track its dependencies so if it
+   * triggers itself again, it's likely intentional and it is the user's
+   * responsibility to perform recursive state mutation that eventually
+   * stabilizes (#1727).
+   */
+  allowRecurse?: boolean
 }
 
-// 队列
-const queue: (Job | null)[] = []
-// 需要刷新的回调函数
-const postFlushCbs: Function[] = []
-// 成功状态的Promise对象
-const p = Promise.resolve()
+export type SchedulerCb = Function & { id?: number }
+export type SchedulerCbs = SchedulerCb | SchedulerCb[]
 
 // 是否开始被刷新
 let isFlushing = false
 // 是否在刷新中
 let isFlushPending = false
+
+const queue: (SchedulerJob | null)[] = []
 let flushIndex = 0
-let pendingPostFlushCbs: Function[] | null = null
-let pendingPostFlushIndex = 0
-// 递归限制100
+
+const pendingPreFlushCbs: SchedulerCb[] = []
+let activePreFlushCbs: SchedulerCb[] | null = null
+let preFlushIndex = 0
+
+const pendingPostFlushCbs: SchedulerCb[] = []
+let activePostFlushCbs: SchedulerCb[] | null = null
+let postFlushIndex = 0
+
+const resolvedPromise: Promise<any> = Promise.resolve()
+let currentFlushPromise: Promise<void> | null = null
+
+let currentPreFlushParentJob: SchedulerJob | null = null
+
 const RECURSION_LIMIT = 100
-type CountMap = Map<Job | Function, number>
+type CountMap = Map<SchedulerJob | SchedulerCb, number>
 
 /**
  * 异步执行回调
@@ -31,30 +56,39 @@ type CountMap = Map<Job | Function, number>
  * @returns Promise实例
  */
 export function nextTick(fn?: () => void): Promise<void> {
-  // 是函数直接放到promise的then中， 不是直接返回
+  const p = currentFlushPromise || resolvedPromise
   return fn ? p.then(fn) : p
 }
 
-/**
- * 队列任务
- * @param job 任务
- */
-export function queueJob(job: Job) {
-  // 队列中不存在这个任务
-  if (!queue.includes(job, flushIndex)) {
-    // 添加到队列
+export function queueJob(job: SchedulerJob) {
+  // the dedupe search uses the startIndex argument of Array.includes()
+  // by default the search index includes the current job that is being run
+  // so it cannot recursively trigger itself again.
+  // if the job is a watch() callback, the search will start with a +1 index to
+  // allow it recursively trigger itself - it is the user's responsibility to
+  // ensure it doesn't end up in an infinite loop.
+  if (
+    (!queue.length ||
+      !queue.includes(
+        job,
+        isFlushing && job.allowRecurse ? flushIndex + 1 : flushIndex
+      )) &&
+    job !== currentPreFlushParentJob
+  ) {
     queue.push(job)
     // 刷新队列
     queueFlush()
   }
 }
 
-/**
- * 无效工作
- * @param job 被无效的工作
- */
-export function invalidateJob(job: Job) {
-  // 当前队列是否存在这个工作
+function queueFlush() {
+  if (!isFlushing && !isFlushPending) {
+    isFlushPending = true
+    currentFlushPromise = resolvedPromise.then(flushJobs)
+  }
+}
+
+export function invalidateJob(job: SchedulerJob) {
   const i = queue.indexOf(job)
   if (i > -1) {
     // 工作置为 null
@@ -62,39 +96,66 @@ export function invalidateJob(job: Job) {
   }
 }
 
-/**
- * 队列刷新回调
- * @param cb 
- */
-export function queuePostFlushCb(cb: Function | Function[]) {
-  // 回调不是数组
+function queueCb(
+  cb: SchedulerCbs,
+  activeQueue: SchedulerCb[] | null,
+  pendingQueue: SchedulerCb[],
+  index: number
+) {
   if (!isArray(cb)) {
     if (
-      !pendingPostFlushCbs ||
-      !pendingPostFlushCbs.includes(cb, pendingPostFlushIndex)
+      !activeQueue ||
+      !activeQueue.includes(
+        cb,
+        (cb as SchedulerJob).allowRecurse ? index + 1 : index
+      )
     ) {
-      postFlushCbs.push(cb)
+      pendingQueue.push(cb)
     }
   } else {
     // if cb is an array, it is a component lifecycle hook which can only be
     // triggered by a job, which is already deduped in the main queue, so
-    // we can skip dupicate check here to improve perf
-    postFlushCbs.push(...cb)
+    // we can skip duplicate check here to improve perf
+    pendingQueue.push(...cb)
   }
   // 刷新队列
   queueFlush()
 }
 
-/**
- * 刷新队列
- */
-function queueFlush() {
-  // 没有正在刷新 && 没有刷新等待 =》 开始刷新
-  if (!isFlushing && !isFlushPending) {
-    // 等待刷新
-    isFlushPending = true
-    // 执行刷新工作
-    nextTick(flushJobs)
+export function queuePreFlushCb(cb: SchedulerCb) {
+  queueCb(cb, activePreFlushCbs, pendingPreFlushCbs, preFlushIndex)
+}
+
+export function queuePostFlushCb(cb: SchedulerCbs) {
+  queueCb(cb, activePostFlushCbs, pendingPostFlushCbs, postFlushIndex)
+}
+
+export function flushPreFlushCbs(
+  seen?: CountMap,
+  parentJob: SchedulerJob | null = null
+) {
+  if (pendingPreFlushCbs.length) {
+    currentPreFlushParentJob = parentJob
+    activePreFlushCbs = [...new Set(pendingPreFlushCbs)]
+    pendingPreFlushCbs.length = 0
+    if (__DEV__) {
+      seen = seen || new Map()
+    }
+    for (
+      preFlushIndex = 0;
+      preFlushIndex < activePreFlushCbs.length;
+      preFlushIndex++
+    ) {
+      if (__DEV__) {
+        checkRecursiveUpdates(seen!, activePreFlushCbs[preFlushIndex])
+      }
+      activePreFlushCbs[preFlushIndex]()
+    }
+    activePreFlushCbs = null
+    preFlushIndex = 0
+    currentPreFlushParentJob = null
+    // recursively flush until it drains
+    flushPreFlushCbs(seen, parentJob)
   }
 }
 
@@ -103,33 +164,41 @@ function queueFlush() {
  * @param seen 
  */
 export function flushPostFlushCbs(seen?: CountMap) {
-  // 刷新回调的数组不为空
-  if (postFlushCbs.length) {
-    pendingPostFlushCbs = [...new Set(postFlushCbs)]
-    // 设置数组为空
-    postFlushCbs.length = 0
-    // 开发中
+  if (pendingPostFlushCbs.length) {
+    const deduped = [...new Set(pendingPostFlushCbs)]
+    pendingPostFlushCbs.length = 0
+
+    // #1947 already has active queue, nested flushPostFlushCbs call
+    if (activePostFlushCbs) {
+      activePostFlushCbs.push(...deduped)
+      return
+    }
+
+    activePostFlushCbs = deduped
     if (__DEV__) {
       // 创建哈希表
       seen = seen || new Map()
     }
+
+    activePostFlushCbs.sort((a, b) => getId(a) - getId(b))
+
     for (
-      pendingPostFlushIndex = 0;
-      pendingPostFlushIndex < pendingPostFlushCbs.length;
-      pendingPostFlushIndex++
+      postFlushIndex = 0;
+      postFlushIndex < activePostFlushCbs.length;
+      postFlushIndex++
     ) {
       if (__DEV__) {
-        checkRecursiveUpdates(seen!, pendingPostFlushCbs[pendingPostFlushIndex])
+        checkRecursiveUpdates(seen!, activePostFlushCbs[postFlushIndex])
       }
-      pendingPostFlushCbs[pendingPostFlushIndex]()
+      activePostFlushCbs[postFlushIndex]()
     }
-    pendingPostFlushCbs = null
-    pendingPostFlushIndex = 0
+    activePostFlushCbs = null
+    postFlushIndex = 0
   }
 }
 
-// 工作id不为空返回，为空返回无限数值，全局属性（Infinity）
-const getId = (job: Job) => (job.id == null ? Infinity : job.id)
+const getId = (job: SchedulerJob | SchedulerCb) =>
+  job.id == null ? Infinity : job.id
 
 /**
  * 刷新任务函数
@@ -144,7 +213,8 @@ function flushJobs(seen?: CountMap) {
     seen = seen || new Map()
   }
 
-  // 刷新前排序队列
+  flushPreFlushCbs(seen)
+
   // Sort queue before flush.
   // 确保
   // This ensures that:
@@ -162,37 +232,33 @@ function flushJobs(seen?: CountMap) {
   // 给任务队列排序 根据id,从大到小
   queue.sort((a, b) => getId(a!) - getId(b!))
 
-  // 遍历任务队列
-  for (flushIndex = 0; flushIndex < queue.length; flushIndex++) {
-    // 获取当前任务
-    const job = queue[flushIndex]
-    // 任务存在
-    if (job) {
-      // 开发中
-      if (__DEV__) {
-        // 检查递归更新
-        checkRecursiveUpdates(seen!, job)
+  try {
+    for (flushIndex = 0; flushIndex < queue.length; flushIndex++) {
+      const job = queue[flushIndex]
+      if (job) {
+        if (__DEV__) {
+          checkRecursiveUpdates(seen!, job)
+        }
+        callWithErrorHandling(job, null, ErrorCodes.SCHEDULER)
       }
-      // 使用错误处理函数进行调用
-      callWithErrorHandling(job, null, ErrorCodes.SCHEDULER)
     }
-  }
-  // 执行完任务，清空队列
-  flushIndex = 0
-  queue.length = 0
+  } finally {
+    flushIndex = 0
+    queue.length = 0
 
-  flushPostFlushCbs(seen)
-  // 刷新完成
-  isFlushing = false
-  // some postFlushCb queued jobs!
-  // keep flushing until it drains. 
-  if (queue.length || postFlushCbs.length) {
-    flushJobs(seen)
+    flushPostFlushCbs(seen)
+
+    isFlushing = false
+    currentFlushPromise = null
+    // some postFlushCb queued jobs!
+    // keep flushing until it drains.
+    if (queue.length || pendingPostFlushCbs.length) {
+      flushJobs(seen)
+    }
   }
 }
 
-function checkRecursiveUpdates(seen: CountMap, fn: Job | Function) {
-  // 不能存在就添加
+function checkRecursiveUpdates(seen: CountMap, fn: SchedulerJob | SchedulerCb) {
   if (!seen.has(fn)) {
     seen.set(fn, 1)
   } else {
@@ -201,9 +267,11 @@ function checkRecursiveUpdates(seen: CountMap, fn: Job | Function) {
     // 调用栈大于100 爆栈
     if (count > RECURSION_LIMIT) {
       throw new Error(
-        'Maximum recursive updates exceeded. ' +
-        "You may have code that is mutating state in your component's " +
-        'render function or updated hook or watcher source function.'
+        `Maximum recursive updates exceeded. ` +
+          `This means you have a reactive effect that is mutating its own ` +
+          `dependencies and thus recursively triggering itself. Possible sources ` +
+          `include component template, render function, updated hook or ` +
+          `watcher source function.`
       )
     } else {
       // 每次加1

@@ -10,13 +10,11 @@ import {
   createTextVNode,
   createStaticVNode
 } from 'vue'
-import { escapeHtml, mockWarn } from '@vue/shared'
+import { escapeHtml } from '@vue/shared'
 import { renderToStream as _renderToStream } from '../src/renderToStream'
 import { Readable } from 'stream'
 import { ssrRenderSlot } from '../src/helpers/ssrRenderSlot'
 import { ssrRenderComponent } from '../src/helpers/ssrRenderComponent'
-
-mockWarn()
 
 const promisifyStream = (stream: Readable) => {
   return new Promise((resolve, reject) => {
@@ -598,8 +596,27 @@ describe('ssr: renderToStream', () => {
       }
 
       expect(await renderToStream(h(Parent))).toBe(
-        `<div data-v-test data-v-child><span data-v-test data-v-child-s>slot</span></div>`
+        `<div data-v-child data-v-test><span data-v-test data-v-child-s>slot</span></div>`
       )
     })
+  })
+
+  test('serverPrefetch', async () => {
+    const msg = Promise.resolve('hello')
+    const app = createApp({
+      data() {
+        return {
+          msg: ''
+        }
+      },
+      async serverPrefetch() {
+        this.msg = await msg
+      },
+      render() {
+        return h('div', this.msg)
+      }
+    })
+    const html = await renderToStream(app)
+    expect(html).toBe(`<div>hello</div>`)
   })
 })
