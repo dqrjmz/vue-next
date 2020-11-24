@@ -7,16 +7,21 @@ import { CollectionTypes } from './collectionHandlers'
 declare const RefSymbol: unique symbol
 
 export interface Ref<T = any> {
+  value: T
   /**
    * Type differentiator only.
    * We need this to be in public d.ts but don't want it to show up in IDE
    * autocomplete, so we use a private Symbol instead.
    */
   [RefSymbol]: true
-  value: T
+  /**
+   * @internal
+   */
+  _shallow?: boolean
 }
 
-export type ToRefs<T = any> = { [K in keyof T]: Ref<T[K]> }
+export type ToRef<T> = T extends Ref ? T : Ref<UnwrapRef<T>>
+export type ToRefs<T = any> = { [K in keyof T]: ToRef<T[K]> }
 
 const convert = <T extends unknown>(val: T): T =>
   isObject(val) ? reactive(val) : val
@@ -30,9 +35,7 @@ export function isRef(r: any): r is Ref {
   return Boolean(r && r.__v_isRef === true)
 }
 
-export function ref<T extends object>(
-  value: T
-): T extends Ref ? T : Ref<UnwrapRef<T>>
+export function ref<T extends object>(value: T): ToRef<T>
 export function ref<T>(value: T): Ref<UnwrapRef<T>>
 export function ref<T = any>(): Ref<T | undefined>
 /**
@@ -66,7 +69,7 @@ class RefImpl<T> {
 
   public readonly __v_isRef = true
 
-  constructor(private _rawValue: T, private readonly _shallow = false) {
+  constructor(private _rawValue: T, public readonly _shallow = false) {
     this._value = _shallow ? _rawValue : convert(_rawValue)
   }
 
@@ -93,7 +96,7 @@ function createRef(rawValue: unknown, shallow = false) {
 }
 
 export function triggerRef(ref: Ref) {
-  trigger(ref, TriggerOpTypes.SET, 'value', __DEV__ ? ref.value : void 0)
+  trigger(toRaw(ref), TriggerOpTypes.SET, 'value', __DEV__ ? ref.value : void 0)
 }
 
 // 从ref对象中获取原始值
@@ -189,8 +192,10 @@ class ObjectRefImpl<T extends object, K extends keyof T> {
 export function toRef<T extends object, K extends keyof T>(
   object: T,
   key: K
-): Ref<T[K]> {
-  return new ObjectRefImpl(object, key) as any
+): ToRef<T[K]> {
+  return isRef(object[key])
+    ? object[key]
+    : (new ObjectRefImpl(object, key) as any)
 }
 
 // corner case when use narrows type

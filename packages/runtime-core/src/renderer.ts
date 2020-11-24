@@ -1,4 +1,4 @@
-﻿import {
+import {
   Text,
   Fragment,
   Comment,
@@ -10,7 +10,8 @@
   isSameVNodeType,
   Static,
   VNodeNormalizedRef,
-  VNodeHook
+  VNodeHook,
+  VNodeNormalizedRefAtom
 } from './vnode'
 import {
   ComponentInternalInstance,
@@ -19,6 +20,7 @@ import {
   setupComponent
 } from './component'
 import {
+  filterSingleRoot,
   renderComponentRoot,
   shouldUpdateComponent,
   updateHOCHostEl
@@ -42,7 +44,6 @@ import {
   flushPostFlushCbs,
   invalidateJob,
   flushPreFlushCbs,
-  SchedulerJob,
   SchedulerCb
 } from './scheduler'
 import { effect, stop, ReactiveEffectOptions, isRef } from '@vue/reactivity'
@@ -55,7 +56,11 @@ import {
   queueEffectWithSuspense,
   SuspenseImpl
 } from './components/Suspense'
-import { TeleportImpl, TeleportVNode } from './components/Teleport'
+import {
+  isTeleportDisabled,
+  TeleportImpl,
+  TeleportVNode
+} from './components/Teleport'
 import { isKeepAlive, KeepAliveContext } from './components/KeepAlive'
 import { registerHMR, unregisterHMR, isHmrUpdating } from './hmr'
 import {
@@ -212,7 +217,8 @@ type UnmountFn = (
   vnode: VNode,
   parentComponent: ComponentInternalInstance | null,
   parentSuspense: SuspenseBoundary | null,
-  doRemove?: boolean
+  doRemove?: boolean,
+  optimized?: boolean
 ) => void
 
 type RemoveFn = (vnode: VNode) => void
@@ -222,6 +228,7 @@ type UnmountChildrenFn = (
   parentComponent: ComponentInternalInstance | null,
   parentSuspense: SuspenseBoundary | null,
   doRemove?: boolean,
+  optimized?: boolean,
   start?: number
 ) => void
 
@@ -259,7 +266,9 @@ export const enum MoveType {
 }
 
 const prodEffectOptions = {
-  scheduler: queueJob
+  scheduler: queueJob,
+  // #1801, #2043 component render effects should allow recursive updates
+  allowRecurse: true
 }
 
 function createDevEffectOptions(
@@ -267,6 +276,7 @@ function createDevEffectOptions(
 ): ReactiveEffectOptions {
   return {
     scheduler: queueJob,
+    allowRecurse: true,
     onTrack: instance.rtc ? e => invokeArrayFns(instance.rtc!, e) : void 0,
     onTrigger: instance.rtg ? e => invokeArrayFns(instance.rtg!, e) : void 0
   }
@@ -283,18 +293,31 @@ export const setRef = (
   parentSuspense: SuspenseBoundary | null,
   vnode: VNode | null
 ) => {
-  let value: ComponentPublicInstance | RendererNode | null
+  if (isArray(rawRef)) {
+    rawRef.forEach((r, i) =>
+      setRef(
+        r,
+        oldRawRef && (isArray(oldRawRef) ? oldRawRef[i] : oldRawRef),
+        parentComponent,
+        parentSuspense,
+        vnode
+      )
+    )
+    return
+  }
+
+  let value: ComponentPublicInstance | RendererNode | Record<string, any> | null
   if (!vnode) {
     value = null
   } else {
     if (vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
-      value = vnode.component!.proxy
+      value = vnode.component!.exposed || vnode.component!.proxy
     } else {
       value = vnode.el
     }
   }
 
-  const [owner, ref] = rawRef
+  const { i: owner, r: ref } = rawRef
   if (__DEV__ && !owner) {
     warn(
       `Missing ref owner context. ref cannot be used on hoisted vnodes. ` +
@@ -302,7 +325,7 @@ export const setRef = (
     )
     return
   }
-  const oldRef = oldRawRef && oldRawRef[1]
+  const oldRef = oldRawRef && (oldRawRef as VNodeNormalizedRefAtom).r
   const refs = owner.refs === EMPTY_OBJ ? (owner.refs = {}) : owner.refs
   const setupState = owner.setupState
 
@@ -369,15 +392,10 @@ export const setRef = (
  * })
  * ```
  */
-/**
- * 创建渲染器
- * @param options  渲染器配置参数
- */
 export function createRenderer<
   HostNode = RendererNode,
   HostElement = RendererElement
 >(options: RendererOptions<HostNode, HostElement>) {
-  // 基础的创建渲染器的方法
   return baseCreateRenderer<HostNode, HostElement>(options)
 }
 
@@ -403,11 +421,6 @@ function baseCreateRenderer(
 ): HydrationRenderer
 
 // implementation
-/**
- * 基础的创建渲染器
- * @param options 渲染器所有操作的配置
- * @param createHydrationFns 
- */
 function baseCreateRenderer(
   options: RendererOptions,
   createHydrationFns?: typeof createHydrationFunctions
@@ -433,23 +446,9 @@ function baseCreateRenderer(
     cloneNode: hostCloneNode,
     insertStaticContent: hostInsertStaticContent
   } = options
-  
 
-  // 注意: 函数内部的这个闭包应该使用函数表达式的风格为了阻止行内被修改
   // Note: functions inside this closure should use `const xxx = () => {}`
   // style in order to prevent being inlined by minifiers.
-
-  /**
-   * 补丁函数
-   * @param n1 老
-   * @param n2 新
-   * @param container 容器对象（真实dom
-   * @param anchor 
-   * @param parentComponent 
-   * @param parentSuspense 
-   * @param isSVG 
-   * @param optimized 
-   */
   const patch: PatchFn = (
     n1,
     n2,
@@ -461,7 +460,6 @@ function baseCreateRenderer(
     optimized = false
   ) => {
     // patching & not same type, unmount old tree
-    // 新老vnode类型不同
     if (n1 && !isSameVNodeType(n1, n2)) {
       anchor = getNextHostNode(n1)
       unmount(n1, parentComponent, parentSuspense, true)
@@ -473,29 +471,21 @@ function baseCreateRenderer(
       n2.dynamicChildren = null
     }
 
-    // newVNode 节点类型，引用，标识类型
     const { type, ref, shapeFlag } = n2
-
-    // 创建vnode 根据不同节点类型
     switch (type) {
-      // 文本节点
       case Text:
         processText(n1, n2, container, anchor)
         break
-      // 注释节点
       case Comment:
         processCommentNode(n1, n2, container, anchor)
         break
-      // 静态节点（没有绑定动态数据的
       case Static:
-        // 没有oldVNode
         if (n1 == null) {
           mountStaticNode(n2, container, anchor, isSVG)
         } else if (__DEV__) {
           patchStaticNode(n1, n2, container, isSVG)
         }
         break
-        // 片段vnode
       case Fragment:
         processFragment(
           n1,
@@ -509,7 +499,6 @@ function baseCreateRenderer(
         )
         break
       default:
-        // 元素vnode
         if (shapeFlag & ShapeFlags.ELEMENT) {
           processElement(
             n1,
@@ -522,7 +511,6 @@ function baseCreateRenderer(
             optimized
           )
         } else if (shapeFlag & ShapeFlags.COMPONENT) {
-          // 组件vnode
           processComponent(
             n1,
             n2,
@@ -534,7 +522,6 @@ function baseCreateRenderer(
             optimized
           )
         } else if (shapeFlag & ShapeFlags.TELEPORT) {
-          // 传送
           ;(type as typeof TeleportImpl).process(
             n1 as TeleportVNode,
             n2 as TeleportVNode,
@@ -547,7 +534,6 @@ function baseCreateRenderer(
             internals
           )
         } else if (__FEATURE_SUSPENSE__ && shapeFlag & ShapeFlags.SUSPENSE) {
-          // 悬挂
           ;(type as typeof SuspenseImpl).process(
             n1,
             n2,
@@ -560,29 +546,18 @@ function baseCreateRenderer(
             internals
           )
         } else if (__DEV__) {
-          // 无效vnode类型
           warn('Invalid VNode type:', type, `(${typeof type})`)
         }
     }
 
-    // 
     // set ref
     if (ref != null && parentComponent) {
       setRef(ref, n1 && n1.ref, parentComponent, parentSuspense, n2)
     }
   }
 
-  /**
-   * 处理文本vnode
-   * @param n1 新
-   * @param n2 老
-   * @param container 
-   * @param anchor 
-   */
   const processText: ProcessTextOrCommentFn = (n1, n2, container, anchor) => {
-    // 不存在
     if (n1 == null) {
-      // 
       hostInsert(
         (n2.el = hostCreateText(n2.children as string)),
         container,
@@ -735,23 +710,17 @@ function baseCreateRenderer(
       dirs
     } = vnode
     if (
-      // 非开发环境
       !__DEV__ &&
-      // vnode有el
       vnode.el &&
-      // 宿主克隆节点
       hostCloneNode !== undefined &&
-      // 
       patchFlag === PatchFlags.HOISTED
     ) {
       // If a vnode has non-null el, it means it's being reused.
       // Only static vnodes can be reused, so its mounted DOM nodes should be
       // exactly the same, and we can simply do a clone here.
       // only do this in production since cloned trees cannot be HMR updated.
-      // 克隆节点的dom节点
       el = vnode.el = hostCloneNode(vnode.el)
     } else {
-      // 创建宿主元素
       el = vnode.el = hostCreateElement(
         vnode.type as string,
         isSVG,
@@ -800,30 +769,6 @@ function baseCreateRenderer(
       }
       // scopeId
       setScopeId(el, scopeId, vnode, parentComponent)
-      // if (scopeId) {
-      //   hostSetScopeId(el, scopeId)
-      // }
-      // if (parentComponent) {
-      //   const treeOwnerId = parentComponent.type.__scopeId
-      //   // vnode's own scopeId and the current patched component's scopeId is
-      //   // different - this is a slot content node.
-      //   if (treeOwnerId && treeOwnerId !== scopeId) {
-      //     hostSetScopeId(el, treeOwnerId + '-s')
-      //   }
-      //   const parentScopeId =
-      //     vnode === parentComponent.subTree && parentComponent.vnode.scopeId
-      //   if (parentScopeId) {
-      //     hostSetScopeId(el, parentScopeId)
-      //     if (parentComponent.parent) {
-      //       const treeOwnerId = parentComponent.parent.type.__scopeId
-      //       // vnode's own scopeId and the current patched component's scopeId is
-      //       // different - this is a slot content node.
-      //       if (treeOwnerId && treeOwnerId !== parentScopeId) {
-      //         hostSetScopeId(el, treeOwnerId + '-s')
-      //       }
-      //     }
-      //   }
-      // }
     }
     if (__DEV__ || __FEATURE_PROD_DEVTOOLS__) {
       Object.defineProperty(el, '__vnode', {
@@ -841,7 +786,7 @@ function baseCreateRenderer(
     // #1583 For inside suspense + suspense not resolved case, enter hook should call when suspense resolved
     // #1689 For inside suspense + suspense resolved case, just call it
     const needCallTransitionHooks =
-      (!parentSuspense || (parentSuspense && parentSuspense!.isResolved)) &&
+      (!parentSuspense || (parentSuspense && !parentSuspense.pendingBranch)) &&
       transition &&
       !transition.persisted
     if (needCallTransitionHooks) {
@@ -877,7 +822,12 @@ function baseCreateRenderer(
       if (treeOwnerId && treeOwnerId !== scopeId) {
         hostSetScopeId(el, treeOwnerId + '-s')
       }
-      if (vnode === parentComponent.subTree) {
+      let subTree = parentComponent.subTree
+      if (__DEV__ && subTree.type === Fragment) {
+        subTree =
+          filterSingleRoot(subTree.children as VNodeArrayChildren) || subTree
+      }
+      if (vnode === subTree) {
         setScopeId(
           el,
           parentComponent.vnode.scopeId,
@@ -939,7 +889,7 @@ function baseCreateRenderer(
       invokeDirectiveHook(n2, n1, parentComponent, 'beforeUpdate')
     }
 
-    if (__DEV__ && isHmrUpdating) {
+    if (__DEV__ && (__BROWSER__ || __TEST__) && isHmrUpdating) {
       // HMR updated, force full diff
       patchFlag = 0
       optimized = false
@@ -1040,7 +990,12 @@ function baseCreateRenderer(
         parentSuspense,
         areChildrenSVG
       )
-      if (__DEV__ && parentComponent && parentComponent.type.__hmrId) {
+      if (
+        __DEV__ &&
+        (__BROWSER__ || __TEST__) &&
+        parentComponent &&
+        parentComponent.type.__hmrId
+      ) {
         traverseStaticChildren(n1, n2)
       }
     } else if (!optimized) {
@@ -1115,6 +1070,7 @@ function baseCreateRenderer(
   ) => {
     if (oldProps !== newProps) {
       for (const key in newProps) {
+        // empty string is not valid prop
         if (isReservedProp(key)) continue
         const next = newProps[key]
         const prev = oldProps[key]
@@ -1213,6 +1169,15 @@ function baseCreateRenderer(
         )
         if (__DEV__ && parentComponent && parentComponent.type.__hmrId) {
           traverseStaticChildren(n1, n2)
+        } else if (
+          // #2080 if the stable fragment has a key, it's a <template v-for> that may
+          //  get moved around. Make sure all root level vnodes inherit el.
+          // #2134 or if it's a component root, it may also get moved around
+          // as the component is being moved.
+          n2.key != null ||
+          (parentComponent && n2 === parentComponent.subTree)
+        ) {
+          traverseStaticChildren(n1, n2, true /* shallow */)
         }
       } else {
         // keyed / unkeyed, or manual fragments.
@@ -1233,17 +1198,6 @@ function baseCreateRenderer(
     }
   }
 
-  /**
-   * 处理组件
-   * @param n1 老
-   * @param n2 新
-   * @param container 容器对象(dom
-   * @param anchor 
-   * @param parentComponent 
-   * @param parentSuspense 
-   * @param isSVG 
-   * @param optimized 
-   */
   const processComponent = (
     n1: VNode | null,
     n2: VNode,
@@ -1254,7 +1208,6 @@ function baseCreateRenderer(
     isSVG: boolean,
     optimized: boolean
   ) => {
-    // oldVNode不存在
     if (n1 == null) {
       if (n2.shapeFlag & ShapeFlags.COMPONENT_KEPT_ALIVE) {
         ;(parentComponent!.ctx as KeepAliveContext).activate(
@@ -1265,16 +1218,6 @@ function baseCreateRenderer(
           optimized
         )
       } else {
-        /**
-         * 安装组件
-         * 1. newVnode
-         * 2. 容器
-         * 3. 锚点
-         * 4. 父组件
-         * 5. 父挂载点
-         * 6. svg标签
-         * 7. 优化
-         */
         mountComponent(
           n2,
           container,
@@ -1286,21 +1229,10 @@ function baseCreateRenderer(
         )
       }
     } else {
-      // oldVNode，newVNode存在，更新组件操作
       updateComponent(n1, n2, optimized)
     }
   }
 
-  /**
-   * 安装组件
-   * @param initialVNode  
-   * @param container  
-   * @param anchor 
-   * @param parentComponent  
-   * @param parentSuspense 
-   * @param isSVG 
-   * @param optimized 
-   */
   const mountComponent: MountComponentFn = (
     initialVNode,
     container,
@@ -1310,14 +1242,13 @@ function baseCreateRenderer(
     isSVG,
     optimized
   ) => {
-    // 创建组件实例
     const instance: ComponentInternalInstance = (initialVNode.component = createComponentInstance(
       initialVNode,
       parentComponent,
       parentSuspense
     ))
 
-    if (__DEV__ && instance.type.__hmrId) {
+    if (__DEV__ && (__BROWSER__ || __TEST__) && instance.type.__hmrId) {
       registerHMR(instance)
     }
 
@@ -1335,10 +1266,7 @@ function baseCreateRenderer(
     if (__DEV__) {
       startMeasure(instance, `init`)
     }
-
-    // 开始安装组件
     setupComponent(instance)
-
     if (__DEV__) {
       endMeasure(instance, `init`)
     }
@@ -1346,14 +1274,10 @@ function baseCreateRenderer(
     // setup() is async. This component relies on async logic to be resolved
     // before proceeding
     if (__FEATURE_SUSPENSE__ && instance.asyncDep) {
-      if (!parentSuspense) {
-        if (__DEV__) warn('async setup() is used without a suspense boundary!')
-        return
-      }
-
-      parentSuspense.registerDep(instance, setupRenderEffect)
+      parentSuspense && parentSuspense.registerDep(instance, setupRenderEffect)
 
       // Give it a placeholder if this is not hydration
+      // TODO handle self-defined fallback
       if (!initialVNode.el) {
         const placeholder = (instance.subTree = createVNode(Comment))
         processCommentNode(null, placeholder, container!, anchor)
@@ -1361,16 +1285,6 @@ function baseCreateRenderer(
       return
     }
 
-    /**
-     * 安装渲染效果
-     * 1. 组件实例
-     * 2. newVNode
-     * 3. 容器dom
-     * 4. 锚点
-     * 5. 挂载点
-     * 6. svg标签
-     * 7. 优化
-     */
     setupRenderEffect(
       instance,
       initialVNode,
@@ -1386,16 +1300,9 @@ function baseCreateRenderer(
       endMeasure(instance, `mount`)
     }
   }
-  /**
-   * 更新组件
-   * @param n1 老vnode
-   * @param n2 新vnode
-   * @param optimized 
-   */
+
   const updateComponent = (n1: VNode, n2: VNode, optimized: boolean) => {
-    // 获取vnode的组件实例
     const instance = (n2.component = n1.component)!
-    // 应该更新组件
     if (shouldUpdateComponent(n1, n2, optimized)) {
       if (
         __FEATURE_SUSPENSE__ &&
@@ -1422,7 +1329,6 @@ function baseCreateRenderer(
         instance.update()
       }
     } else {
-      // 不需要更新 
       // no update needed. just copy over properties
       n2.component = n1.component
       n2.el = n1.el
@@ -1430,16 +1336,6 @@ function baseCreateRenderer(
     }
   }
 
-  /**
-   * 安装渲染效果
-   * @param instance 组件实例
-   * @param initialVNode 初始化vnode
-   * @param container html容器对象
-   * @param anchor 
-   * @param parentSuspense 
-   * @param isSVG 
-   * @param optimized 
-   */
   const setupRenderEffect: SetupRenderEffectFn = (
     instance,
     initialVNode,
@@ -1449,13 +1345,10 @@ function baseCreateRenderer(
     isSVG,
     optimized
   ) => {
-    // 给渲染创建响应式效果
     // create reactive effect for rendering
     instance.update = effect(function componentEffect() {
-      // 组件没有被安装
       if (!instance.isMounted) {
         let vnodeHook: VNodeHook | null | undefined
-        // 组件vnode的el,props
         const { el, props } = initialVNode
         const { bm, m, parent } = instance
 
@@ -1463,7 +1356,7 @@ function baseCreateRenderer(
         if (bm) {
           invokeArrayFns(bm)
         }
-        // onVnodeBeforeMount vnode安装之前
+        // onVnodeBeforeMount
         if ((vnodeHook = props && props.onVnodeBeforeMount)) {
           invokeVNodeHook(vnodeHook, parent, initialVNode)
         }
@@ -1509,11 +1402,11 @@ function baseCreateRenderer(
           }
           initialVNode.el = subTree.el
         }
-        // mounted hook 安装完成函数
+        // mounted hook
         if (m) {
           queuePostRenderEffect(m, parentSuspense)
         }
-        // onVnodeMounted vnode安装完成
+        // onVnodeMounted
         if ((vnodeHook = props && props.onVnodeMounted)) {
           queuePostRenderEffect(() => {
             invokeVNodeHook(vnodeHook!, parent, initialVNode)
@@ -1529,7 +1422,6 @@ function baseCreateRenderer(
         ) {
           queuePostRenderEffect(a, parentSuspense)
         }
-        // 组件安装完成,这部组件被安装完成
         instance.isMounted = true
       } else {
         // updateComponent
@@ -1543,11 +1435,11 @@ function baseCreateRenderer(
         }
 
         if (next) {
+          next.el = vnode.el
           updateComponentPreRender(instance, next, optimized)
         } else {
           next = vnode
         }
-        next.el = vnode.el
 
         // beforeUpdate hook
         if (bu) {
@@ -1569,11 +1461,6 @@ function baseCreateRenderer(
         const prevTree = instance.subTree
         instance.subTree = nextTree
 
-        // reset refs
-        // only needed if previous patch had refs
-        if (instance.refs !== EMPTY_OBJ) {
-          instance.refs = {}
-        }
         if (__DEV__) {
           startMeasure(instance, `patch`)
         }
@@ -1618,8 +1505,6 @@ function baseCreateRenderer(
         }
       }
     }, __DEV__ ? createDevEffectOptions(instance) : prodEffectOptions)
-    // #1801 mark it to allow recursive updates
-    ;(instance.update as SchedulerJob).allowRecurse = true
   }
 
   const updateComponentPreRender = (
@@ -1769,7 +1654,14 @@ function baseCreateRenderer(
     }
     if (oldLength > newLength) {
       // remove old
-      unmountChildren(c1, parentComponent, parentSuspense, true, commonLength)
+      unmountChildren(
+        c1,
+        parentComponent,
+        parentSuspense,
+        true,
+        false,
+        commonLength
+      )
     } else {
       // mount new
       mountChildren(
@@ -2090,7 +1982,8 @@ function baseCreateRenderer(
     vnode,
     parentComponent,
     parentSuspense,
-    doRemove = false
+    doRemove = false,
+    optimized = false
   ) => {
     const {
       type,
@@ -2138,13 +2031,27 @@ function baseCreateRenderer(
           (patchFlag > 0 && patchFlag & PatchFlags.STABLE_FRAGMENT))
       ) {
         // fast path for block nodes: only need to unmount dynamic children.
-        unmountChildren(dynamicChildren, parentComponent, parentSuspense)
-      } else if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+        unmountChildren(
+          dynamicChildren,
+          parentComponent,
+          parentSuspense,
+          false,
+          true
+        )
+      } else if (
+        (type === Fragment &&
+          (patchFlag & PatchFlags.KEYED_FRAGMENT ||
+            patchFlag & PatchFlags.UNKEYED_FRAGMENT)) ||
+        (!optimized && shapeFlag & ShapeFlags.ARRAY_CHILDREN)
+      ) {
         unmountChildren(children as VNode[], parentComponent, parentSuspense)
       }
 
-      // an unmounted teleport should always remove its children
-      if (shapeFlag & ShapeFlags.TELEPORT) {
+      // an unmounted teleport should always remove its children if not disabled
+      if (
+        shapeFlag & ShapeFlags.TELEPORT &&
+        (doRemove || !isTeleportDisabled(vnode.props))
+      ) {
         ;(vnode.type as typeof TeleportImpl).remove(vnode, internals)
       }
 
@@ -2215,7 +2122,7 @@ function baseCreateRenderer(
     parentSuspense: SuspenseBoundary | null,
     doRemove?: boolean
   ) => {
-    if (__DEV__ && instance.type.__hmrId) {
+    if (__DEV__ && (__BROWSER__ || __TEST__) && instance.type.__hmrId) {
       unregisterHMR(instance)
     }
 
@@ -2249,10 +2156,11 @@ function baseCreateRenderer(
     if (
       __FEATURE_SUSPENSE__ &&
       parentSuspense &&
-      !parentSuspense.isResolved &&
+      parentSuspense.pendingBranch &&
       !parentSuspense.isUnmounted &&
       instance.asyncDep &&
-      !instance.asyncResolved
+      !instance.asyncResolved &&
+      instance.suspenseId === parentSuspense.pendingId
     ) {
       parentSuspense.deps--
       if (parentSuspense.deps === 0) {
@@ -2270,10 +2178,11 @@ function baseCreateRenderer(
     parentComponent,
     parentSuspense,
     doRemove = false,
+    optimized = false,
     start = 0
   ) => {
     for (let i = start; i < children.length; i++) {
-      unmount(children[i], parentComponent, parentSuspense, doRemove)
+      unmount(children[i], parentComponent, parentSuspense, doRemove, optimized)
     }
   }
 
@@ -2287,53 +2196,15 @@ function baseCreateRenderer(
     return hostNextSibling((vnode.anchor || vnode.el)!)
   }
 
-  /**
-   * #1156
-   * When a component is HMR-enabled, we need to make sure that all static nodes
-   * inside a block also inherit the DOM element from the previous tree so that
-   * HMR updates (which are full updates) can retrieve the element for patching.
-   *
-   * Dev only.
-   */
-  const traverseStaticChildren = (n1: VNode, n2: VNode) => {
-    const ch1 = n1.children
-    const ch2 = n2.children
-    if (isArray(ch1) && isArray(ch2)) {
-      for (let i = 0; i < ch1.length; i++) {
-        // this is only called in the optimized path so array children are
-        // guaranteed to be vnodes
-        const c1 = ch1[i] as VNode
-        const c2 = (ch2[i] = cloneIfMounted(ch2[i] as VNode))
-        if (c2.shapeFlag & ShapeFlags.ELEMENT && !c2.dynamicChildren) {
-          if (c2.patchFlag <= 0 || c2.patchFlag === PatchFlags.HYDRATE_EVENTS) {
-            c2.el = c1.el
-          }
-          traverseStaticChildren(c1, c2)
-        }
-      }
-    }
-  }
-
-  /**
-   * 渲染函数
-   * @param vnode 虚拟节点， 新节点
-   * @param container html中的容器元素
-   */
   const render: RootRenderFunction = (vnode, container) => {
-    // 没有vnode,说明是卸载
     if (vnode == null) {
-      // 容器元素有_vnode元素
       if (container._vnode) {
-        // 卸载
         unmount(container._vnode, null, null, true)
       }
     } else {
-      // 有vnode
-      // 直接补丁, 参数： 容器对象存在的_vnode(oldVNode), newVNode, 容器对象
       patch(container._vnode || null, vnode, container)
     }
     flushPostFlushCbs()
-    // 将根组件的vnode添加到_vnode属性
     container._vnode = vnode
   }
 
@@ -2360,21 +2231,12 @@ function baseCreateRenderer(
   }
 
   return {
-    // 渲染器
     render,
     hydrate,
-    // 创建app的函数
     createApp: createAppAPI(render, hydrate)
   }
 }
 
-/**
- * 调用vnode钩子函数
- * @param hook 钩子函数
- * @param instance 组件实例
- * @param vnode 组件的vnode
- * @param prevVNode 组件的上一个vnode
- */
 export function invokeVNodeHook(
   hook: VNodeHook,
   instance: ComponentInternalInstance | null,
@@ -2385,6 +2247,42 @@ export function invokeVNodeHook(
     vnode,
     prevVNode
   ])
+}
+
+/**
+ * #1156
+ * When a component is HMR-enabled, we need to make sure that all static nodes
+ * inside a block also inherit the DOM element from the previous tree so that
+ * HMR updates (which are full updates) can retrieve the element for patching.
+ *
+ * #2080
+ * Inside keyed `template` fragment static children, if a fragment is moved,
+ * the children will always moved so that need inherit el form previous nodes
+ * to ensure correct moved position.
+ */
+export function traverseStaticChildren(n1: VNode, n2: VNode, shallow = false) {
+  const ch1 = n1.children
+  const ch2 = n2.children
+  if (isArray(ch1) && isArray(ch2)) {
+    for (let i = 0; i < ch1.length; i++) {
+      // this is only called in the optimized path so array children are
+      // guaranteed to be vnodes
+      const c1 = ch1[i] as VNode
+      let c2 = ch2[i] as VNode
+      if (c2.shapeFlag & ShapeFlags.ELEMENT && !c2.dynamicChildren) {
+        if (c2.patchFlag <= 0 || c2.patchFlag === PatchFlags.HYDRATE_EVENTS) {
+          c2 = ch2[i] = cloneIfMounted(ch2[i] as VNode)
+          c2.el = c1.el
+        }
+        if (!shallow) traverseStaticChildren(c1, c2)
+      }
+      // also inherit for comment nodes, but not placeholders (e.g. v-if which
+      // would have received .el during block patch)
+      if (__DEV__ && c2.type === Comment && !c2.el) {
+        c2.el = c1.el
+      }
+    }
+  }
 }
 
 // https://en.wikipedia.org/wiki/Longest_increasing_subsequence

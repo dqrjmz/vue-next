@@ -33,8 +33,7 @@ const {
   setCurrentRenderingInstance,
   setupComponent,
   renderComponentRoot,
-  normalizeVNode,
-  normalizeSuspenseChildren
+  normalizeVNode
 } = ssrUtils
 
 export type SSRBuffer = SSRBufferItem[] & { hasAsync?: boolean }
@@ -116,11 +115,17 @@ function renderComponentSubTree(
       instance
     )
   } else {
-    if (!instance.render && !comp.ssrRender && isString(comp.template)) {
+    if (
+      !instance.render &&
+      !instance.ssrRender &&
+      !comp.ssrRender &&
+      isString(comp.template)
+    ) {
       comp.ssrRender = ssrCompile(comp.template, instance)
     }
 
-    if (comp.ssrRender) {
+    const ssrRender = instance.ssrRender || comp.ssrRender
+    if (ssrRender) {
       // optimized
       // resolve fallthrough attrs
       let attrs =
@@ -139,7 +144,7 @@ function renderComponentSubTree(
 
       // set current rendering instance for asset resolution
       setCurrentRenderingInstance(instance)
-      comp.ssrRender(
+      ssrRender(
         instance.proxy,
         push,
         instance,
@@ -200,11 +205,7 @@ export function renderVNode(
       } else if (shapeFlag & ShapeFlags.TELEPORT) {
         renderTeleportVNode(push, vnode, parentComponent)
       } else if (shapeFlag & ShapeFlags.SUSPENSE) {
-        renderVNode(
-          push,
-          normalizeSuspenseChildren(vnode).content,
-          parentComponent
-        )
+        renderVNode(push, vnode.ssContent!, parentComponent)
       } else {
         warn(
           '[@vue/server-renderer] Invalid VNode type:',

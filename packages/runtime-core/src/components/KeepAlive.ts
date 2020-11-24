@@ -1,4 +1,4 @@
-﻿import {
+import {
   ConcreteComponent,
   getCurrentInstance,
   FunctionalComponent,
@@ -13,8 +13,8 @@ import {
   onBeforeUnmount,
   injectHook,
   onUnmounted,
-  onBeforeMount,
-  onBeforeUpdate
+  onMounted,
+  onUpdated
 } from '../apiLifecycle'
 import {
   isString,
@@ -59,11 +59,6 @@ export interface KeepAliveContext extends ComponentRenderContext {
   deactivate: (vnode: VNode) => void
 }
 
-/**
- * 判断组件是否为keepAlive组件
- * 1. vnode的type属性存在 __isKeepAlive属性
- * @param vnode 
- */
 export const isKeepAlive = (vnode: VNode): boolean =>
   (vnode.type as any).__isKeepAlive
 
@@ -84,22 +79,18 @@ const KeepAliveImpl = {
   },
 
   setup(props: KeepAliveProps, { slots }: SetupContext) {
-    // 缓存组件的vnode
     const cache: Cache = new Map()
     const keys: Keys = new Set()
     let current: VNode | null = null
-    // 获取当前组件实例
+
     const instance = getCurrentInstance()!
     const parentSuspense = instance.suspense
-
-    console.log(instance)
 
     // KeepAlive communicates with the instantiated renderer via the
     // ctx where the renderer passes in its internals,
     // and the KeepAlive instance exposes activate/deactivate implementations.
     // The whole point of this is to avoid importing KeepAlive directly in the
     // renderer to facilitate tree-shaking.
-    // 这整个点是用来避免直接导入keepalive在渲染器中促进树摇
     const sharedContext = instance.ctx as KeepAliveContext
     const {
       renderer: {
@@ -158,10 +149,6 @@ const KeepAliveImpl = {
       _unmount(vnode, instance, parentSuspense)
     }
 
-    /**
-     * 修剪缓存
-     * @param filter 过滤函数
-     */
     function pruneCache(filter?: (name: string) => boolean) {
       cache.forEach((vnode, key) => {
         const name = getName(vnode.type as ConcreteComponent)
@@ -171,136 +158,113 @@ const KeepAliveImpl = {
       })
     }
 
-    /**
-     * 修建缓存
-     * @param key 
-     */
     function pruneCacheEntry(key: CacheKey) {
-      // 从缓存中根据组件的key获取vnode
       const cached = cache.get(key) as VNode
-      // 当前不存在 || 缓存中的vnode和当前的不等
       if (!current || cached.type !== current.type) {
-        // 卸载
         unmount(cached)
-        // 当前存在
       } else if (current) {
         // current active instance should no longer be kept-alive.
         // we can't unmount it now but it might be later, so reset its flag now.
         resetShapeFlag(current)
       }
-      // 删除缓存
       cache.delete(key)
       keys.delete(key)
     }
 
+    // prune cache on include/exclude prop change
     watch(
-      // 监听属性变化
       () => [props.include, props.exclude],
       ([include, exclude]) => {
         include && pruneCache(name => matches(include, name))
-        exclude && pruneCache(name => matches(exclude, name))
-      }
+        exclude && pruneCache(name => !matches(exclude, name))
+      },
+      // prune post-render after `current` has been updated
+      { flush: 'post' }
     )
 
-    // cache sub tree in beforeMount/Update (i.e. right after the render)
+    // cache sub tree after render
     let pendingCacheKey: CacheKey | null = null
     const cacheSubtree = () => {
       // fix #1621, the pendingCacheKey could be 0
-      // 等候缓存key != null
       if (pendingCacheKey != null) {
-        // 进行缓存
-        cache.set(pendingCacheKey, instance.subTree)
+        cache.set(pendingCacheKey, getInnerChild(instance.subTree))
       }
     }
-    // 安装前
-    onBeforeMount(cacheSubtree)
-    onBeforeUpdate(cacheSubtree)
+    onMounted(cacheSubtree)
+    onUpdated(cacheSubtree)
 
     onBeforeUnmount(() => {
       cache.forEach(cached => {
         const { subTree, suspense } = instance
-        if (cached.type === subTree.type) {
+        const vnode = getInnerChild(subTree)
+        if (cached.type === vnode.type) {
           // current instance will be unmounted as part of keep-alive's unmount
-          resetShapeFlag(subTree)
+          resetShapeFlag(vnode)
           // but invoke its deactivated hook here
-          const da = subTree.component!.da
+          const da = vnode.component!.da
           da && queuePostRenderEffect(da, suspense)
           return
         }
         unmount(cached)
       })
     })
-    
-    // created之前执行
+
     return () => {
-      // 1. 清空当前缓存key变量
       pendingCacheKey = null
-      // 2. 判断有插槽中没有数据
+
       if (!slots.default) {
         return null
       }
-      // 3. 获取默认插槽中的组件vnode
+
       const children = slots.default()
-      // 4. 获取第一个虚拟节点
-      let vnode = children[0]
-      // 5. 子组件的数量》1
+      const rawVNode = children[0]
       if (children.length > 1) {
-        // 警告组件中只能有一个组件
         if (__DEV__) {
-          // keepAlive应该只包含一个子组件
           warn(`KeepAlive should contain exactly one component child.`)
         }
-        // 清除当前组件实例
         current = null
         return children
       } else if (
-        // 不是vnode节点
-        !isVNode(vnode) ||
-        // vnode的类型的标识不存在 || 不是有状态组件
-        !(vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT)
+        !isVNode(rawVNode) ||
+        (!(rawVNode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) &&
+          !(rawVNode.shapeFlag & ShapeFlags.SUSPENSE))
       ) {
         current = null
-        return vnode
+        return rawVNode
       }
 
+      let vnode = getInnerChild(rawVNode)
       const comp = vnode.type as ConcreteComponent
       const name = getName(comp)
-
-      // 这个是<keep-alive :include="a,b,c" :exclude="" :max="1"></keep-alive>
-      // 匹配到的组件，可以保活， 
       const { include, exclude, max } = props
 
       if (
-        // 包括属性 && 组件明不存在 || 在include中是否包含此组件
         (include && (!name || !matches(include, name))) ||
-        // 排除组件 && 组件存在 && 在排除中匹配到
         (exclude && name && matches(exclude, name))
       ) {
-        return (current = vnode)
+        current = vnode
+        return rawVNode
       }
 
-      // vnode的key==null用组件名称，否则用key
       const key = vnode.key == null ? comp : vnode.key
-
-      // 获取是否存在这个vnode
       const cachedVNode = cache.get(key)
 
       // clone vnode if it's reused because we are going to mutate it
-      // 因为我们打算改变它重复使用， 
       if (vnode.el) {
         vnode = cloneVNode(vnode)
+        if (rawVNode.shapeFlag & ShapeFlags.SUSPENSE) {
+          rawVNode.ssContent = vnode
+        }
       }
       // #1513 it's possible for the returned vnode to be cloned due to attr
       // fallthrough or scopeId, so the vnode here may not be the final vnode
       // that is mounted. Instead of caching it directly, we store the pending
       // key and cache `instance.subTree` (the normalized vnode) in
       // beforeMount/beforeUpdate hooks.
-      // 设置缓存的key
       pendingCacheKey = key
 
       if (cachedVNode) {
         // copy over mounted state
-        // 复制挂载状态
         vnode.el = cachedVNode.el
         vnode.component = cachedVNode.component
         if (vnode.transition) {
@@ -308,15 +272,13 @@ const KeepAliveImpl = {
           setTransitionHooks(vnode, vnode.transition!)
         }
         // avoid vnode being mounted as fresh
-        // 避免vnode被装新
         vnode.shapeFlag |= ShapeFlags.COMPONENT_KEPT_ALIVE
         // make this key the freshest
         keys.delete(key)
         keys.add(key)
       } else {
-        // 不存在就添加，如果缓存数量已经大于限定的max，将最近，最少访问的删除
         keys.add(key)
-        // prune oldest entry 修剪最老的节点
+        // prune oldest entry
         if (max && keys.size > parseInt(max as string, 10)) {
           pruneCacheEntry(keys.values().next().value)
         }
@@ -325,15 +287,12 @@ const KeepAliveImpl = {
       vnode.shapeFlag |= ShapeFlags.COMPONENT_SHOULD_KEEP_ALIVE
 
       current = vnode
-      // h()
-      return vnode
+      return rawVNode
     }
   }
 }
 
-// 暴露这个公共类型给tsx接口
 // export the public type for h/tsx inference
-// 还避免了在生成的d.ts文件中内联import()
 // also to avoid inline import() in generated d.ts files
 export const KeepAlive = (KeepAliveImpl as any) as {
   __isKeepAlive: true
@@ -346,27 +305,15 @@ function getName(comp: ConcreteComponent): string | void {
   return (comp as FunctionalComponent).displayName || comp.name
 }
 
-/**
- * 匹配
- * @param pattern 模式
- * @param name 项目
- */
 function matches(pattern: MatchPattern, name: string): boolean {
-  // 模式是数组类型
   if (isArray(pattern)) {
-    // 判断模式数组中每个元素与name是否匹配
     return pattern.some((p: string | RegExp) => matches(p, name))
-    // 模式是字符串类型
   } else if (isString(pattern)) {
-    // 将字符串以逗号分割，在里面找匹配的到的
     return pattern.split(',').indexOf(name) > -1
-    // 模式有test方法（说明是正则对象）
   } else if (pattern.test) {
-    // 直接匹配
     return pattern.test(name)
   }
   /* istanbul ignore next */
-  // 数据不对
   return false
 }
 
@@ -445,4 +392,8 @@ function resetShapeFlag(vnode: VNode) {
     shapeFlag -= ShapeFlags.COMPONENT_KEPT_ALIVE
   }
   vnode.shapeFlag = shapeFlag
+}
+
+function getInnerChild(vnode: VNode) {
+  return vnode.shapeFlag & ShapeFlags.SUSPENSE ? vnode.ssContent! : vnode
 }

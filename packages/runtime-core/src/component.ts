@@ -1,4 +1,4 @@
-﻿import { VNode, VNodeChild, isVNode } from './vnode'
+import { VNode, VNodeChild, isVNode } from './vnode'
 import {
   ReactiveEffect,
   pauseTracking,
@@ -26,7 +26,12 @@ import { warn } from './warning'
 import { ErrorCodes, callWithErrorHandling } from './errorHandling'
 import { AppContext, createAppContext, AppConfig } from './apiCreateApp'
 import { Directive, validateDirectiveName } from './directives'
-import { applyOptions, ComponentOptions } from './componentOptions'
+import {
+  applyOptions,
+  ComponentOptions,
+  ComputedOptions,
+  MethodOptions
+} from './componentOptions'
 import {
   EmitsOptions,
   ObjectEmitsOptions,
@@ -61,7 +66,7 @@ export type Data = Record<string, unknown>
 export interface ComponentCustomProps {}
 
 /**
- * Default allowed non-declared props on ocmponent in TSX
+ * Default allowed non-declared props on component in TSX
  */
 export interface AllowedComponentProps {
   class?: unknown
@@ -74,11 +79,11 @@ export interface ComponentInternalOptions {
   /**
    * @internal
    */
-  __props?: Record<number, NormalizedPropsOptions>
+  __props?: NormalizedPropsOptions
   /**
    * @internal
    */
-  __emits?: Record<number, ObjectEmitsOptions | null>
+  __emits?: ObjectEmitsOptions | null
   /**
    * @internal
    */
@@ -100,7 +105,7 @@ export interface ComponentInternalOptions {
 export interface FunctionalComponent<P = {}, E extends EmitsOptions = {}>
   extends ComponentInternalOptions {
   // use of any here is intentional so it can be a valid JSX Element constructor
-  (props: P, ctx: SetupContext<E>): any
+  (props: P, ctx: Omit<SetupContext<E, P>, 'expose'>): any
   props?: ComponentPropsOptions<P>
   emits?: E | (keyof E)[]
   inheritAttrs?: boolean
@@ -118,13 +123,29 @@ export interface ClassComponent {
  * values, e.g. checking if its a function or not. This is mostly for internal
  * implementation code.
  */
-export type ConcreteComponent = ComponentOptions | FunctionalComponent<any, any>
+export type ConcreteComponent<
+  Props = {},
+  RawBindings = any,
+  D = any,
+  C extends ComputedOptions = ComputedOptions,
+  M extends MethodOptions = MethodOptions
+> =
+  | ComponentOptions<Props, RawBindings, D, C, M>
+  | FunctionalComponent<Props, any>
 
 /**
  * A type used in public APIs where a component type is expected.
  * The constructor type is an artificial type returned by defineComponent().
  */
-export type Component = ConcreteComponent | ComponentPublicInstanceConstructor
+export type Component<
+  Props = any,
+  RawBindings = any,
+  D = any,
+  C extends ComputedOptions = ComputedOptions,
+  M extends MethodOptions = MethodOptions
+> =
+  | ConcreteComponent<Props, RawBindings, D, C, M>
+  | ComponentPublicInstanceConstructor<Props>
 
 export { ComponentOptions }
 
@@ -146,10 +167,12 @@ export const enum LifecycleHooks {
   ERROR_CAPTURED = 'ec'
 }
 
-export interface SetupContext<E = EmitsOptions> {
+export interface SetupContext<E = EmitsOptions, P = Data> {
+  props: P
   attrs: Data
   slots: Slots
   emit: EmitFn<E>
+  expose: (exposed: Record<string, any>) => void
 }
 
 /**
@@ -169,7 +192,6 @@ export type InternalRenderFunction = {
 }
 
 /**
- * 我们在内部实例上暴露了属性的一套子集，因为对于高级外部库和工具他们是有用的
  * We expose a subset of properties on the internal instance as they are
  * useful for advanced external libraries and tools.
  */
@@ -201,6 +223,11 @@ export interface ComponentInternalInstance {
    * @internal
    */
   render: InternalRenderFunction | null
+  /**
+   * SSR render function
+   * @internal
+   */
+  ssrRender?: Function | null
   /**
    * Object containing values this component provides for its descendents
    * @internal
@@ -247,11 +274,11 @@ export interface ComponentInternalInstance {
 
   // the rest are only for stateful components ---------------------------------
 
-  /**
-   * main proxy that serves as the public instance (`this`)
-   * @internal
-   */
+  // main proxy that serves as the public instance (`this`)
   proxy: ComponentPublicInstance | null
+
+  // exposed properties via expose()
+  exposed: Record<string, any> | null
 
   /**
    * alternative proxy used only for runtime-compiled render functions using
@@ -296,11 +323,15 @@ export interface ComponentInternalInstance {
   setupContext: SetupContext | null
 
   /**
-   * 相关悬念
    * suspense related
    * @internal
    */
   suspense: SuspenseBoundary | null
+  /**
+   * suspense pending batch id
+   * @internal
+   */
+  suspenseId: number
   /**
    * @internal
    */
@@ -370,15 +401,8 @@ export interface ComponentInternalInstance {
 
 const emptyAppContext = createAppContext()
 
-// 创建组件实例
 let uid = 0
 
-/**
- * 创建组件实例
- * @param vnode 节点
- * @param parent 父组件
- * @param suspense 挂载点
- */
 export function createComponentInstance(
   vnode: VNode,
   parent: ComponentInternalInstance | null,
@@ -388,6 +412,7 @@ export function createComponentInstance(
   // inherit parent app context - or - if root, adopt from root vnode
   const appContext =
     (parent ? parent.appContext : vnode.appContext) || emptyAppContext
+
   const instance: ComponentInternalInstance = {
     uid: uid++,
     vnode,
@@ -400,6 +425,7 @@ export function createComponentInstance(
     update: null!, // will be set synchronously right after creation
     render: null,
     proxy: null,
+    exposed: null,
     withProxy: null,
     effects: null,
     provides: parent ? parent.provides : Object.create(appContext.provides),
@@ -430,6 +456,7 @@ export function createComponentInstance(
 
     // suspense related
     suspense,
+    suspenseId: suspense ? suspense.pendingId : 0,
     asyncDep: null,
     asyncResolved: false,
 
@@ -453,7 +480,6 @@ export function createComponentInstance(
     ec: null
   }
   if (__DEV__) {
-    // 创建渲染上下文
     instance.ctx = createRenderContext(instance)
   } else {
     instance.ctx = { _: instance }
@@ -470,32 +496,20 @@ export function createComponentInstance(
 
 export let currentInstance: ComponentInternalInstance | null = null
 
-/**
- * 获取当前组件实例
- */
 export const getCurrentInstance: () => ComponentInternalInstance | null = () =>
   currentInstance || currentRenderingInstance
 
-  // 设置组件实例
 export const setCurrentInstance = (
   instance: ComponentInternalInstance | null
 ) => {
   currentInstance = instance
 }
 
-// 是否是内置的标签
 const isBuiltInTag = /*#__PURE__*/ makeMap('slot,component')
 
-/**
- * 验证组件名称
- * @param name 组件名称
- * @param config 组件配置
- */
 export function validateComponentName(name: string, config: AppConfig) {
   const appIsNativeTag = config.isNativeTag || NO
-  // vue内置的标签 || 原生html的标签 
   if (isBuiltInTag(name) || appIsNativeTag(name)) {
-    // 不要使用内置或者保留的html元素作为组件id
     warn(
       'Do not use built-in or reserved HTML elements as component id: ' + name
     )
@@ -505,7 +519,6 @@ export function validateComponentName(name: string, config: AppConfig) {
 export let isInSSRComponentSetup = false
 
 export function setupComponent(
-  // 组件内部实例
   instance: ComponentInternalInstance,
   isSSR = false
 ) {
@@ -513,30 +526,21 @@ export function setupComponent(
 
   const { props, children, shapeFlag } = instance.vnode
   const isStateful = shapeFlag & ShapeFlags.STATEFUL_COMPONENT
-  // 初始化Prop
   initProps(instance, props, isStateful, isSSR)
-  // 初始化Slot
   initSlots(instance, children)
 
   const setupResult = isStateful
-  // 安装有状态组件
     ? setupStatefulComponent(instance, isSSR)
     : undefined
   isInSSRComponentSetup = false
   return setupResult
 }
 
-/**
- * 安装有状态组件
- * @param instance 组件实例
- * @param isSSR 
- */
 function setupStatefulComponent(
   instance: ComponentInternalInstance,
   isSSR: boolean
 ) {
-  // 组件实例的组件的类型（也是vnode的类型
-  const Component = instance.type as ComponentOptions 
+  const Component = instance.type as ComponentOptions
 
   if (__DEV__) {
     if (Component.name) {
@@ -555,10 +559,8 @@ function setupStatefulComponent(
       }
     }
   }
-  // 通过缓存创建渲染代理属性
   // 0. create render proxy property access cache
-  instance.accessCache = {}
-  // 创建公共实例/渲染代理,还标记他,所以他不会被观察
+  instance.accessCache = Object.create(null)
   // 1. create public instance / render proxy
   // also mark it raw so it's never observed
   instance.proxy = new Proxy(instance.ctx, PublicInstanceProxyHandlers)
@@ -566,45 +568,33 @@ function setupStatefulComponent(
     exposePropsOnRenderContext(instance)
   }
   // 2. call setup()
-  // 在组件created之前
-  // 作为Composition api入口点
   const { setup } = Component
   if (setup) {
-    // 安装上下文
     const setupContext = (instance.setupContext =
-      // 如果setup是数组，创建setup上下文，否则返回null
       setup.length > 1 ? createSetupContext(instance) : null)
-      // 保存当前组件的引用
+
     currentInstance = instance
     pauseTracking()
-    // 调用setup方法，返回结果
     const setupResult = callWithErrorHandling(
       setup,
       instance,
       ErrorCodes.SETUP_FUNCTION,
-      // 组件的props属性，setup(props)方法接收 
       [__DEV__ ? shallowReadonly(instance.props) : instance.props, setupContext]
     )
     resetTracking()
-    // 当前组件
     currentInstance = null
-      // 是Promise类型数据
+
     if (isPromise(setupResult)) {
       if (isSSR) {
-        // 服务端渲染
         // return the promise so server-renderer can wait on it
         return setupResult.then((resolvedResult: unknown) => {
           handleSetupResult(instance, resolvedResult, isSSR)
         })
-        // 特性挂载点
       } else if (__FEATURE_SUSPENSE__) {
-        // 异步setup返回Promise
         // async setup returned Promise.
-        // 
         // bail here and wait for re-entry.
         instance.asyncDep = setupResult
       } else if (__DEV__) {
-        // setup不支持返回Promise
         warn(
           `setup() returned a Promise, but the version of Vue you are using ` +
             `does not support it yet.`
@@ -618,35 +608,28 @@ function setupStatefulComponent(
   }
 }
 
-/**
- * 处理setupResult
- * @param instance 组件实例 
- * @param setupResult setupResult数据
- * @param isSSR 
- */
 export function handleSetupResult(
   instance: ComponentInternalInstance,
   setupResult: unknown,
   isSSR: boolean
 ) {
-  // 函数
   if (isFunction(setupResult)) {
     // setup returned an inline render function
-    // 当作组件的render函数，因为返回值函数可能返回vnode
-    instance.render = setupResult as InternalRenderFunction
-    // 对象
+    if (!__BROWSER__ && (instance.type as ComponentOptions).__ssrInlineRender) {
+      // when the function's name is `ssrRender` (compiled by SFC inline mode),
+      // set it as ssrRender instead.
+      instance.ssrRender = setupResult
+    } else {
+      instance.render = setupResult as InternalRenderFunction
+    }
   } else if (isObject(setupResult)) {
-    // vnode
     if (__DEV__ && isVNode(setupResult)) {
-      // 不应该直接返回vnode,应该返回一个渲染函数
       warn(
         `setup() should not return VNodes directly - ` +
           `return a render function instead.`
       )
     }
-    // 返回bindings对象
     // setup returned bindings.
-    // 假设从模板编译一个渲染函数现在
     // assuming a render function compiled from template is present.
     if (__DEV__ || __FEATURE_PROD_DEVTOOLS__) {
       instance.devtoolsRawSetupState = setupResult
@@ -662,7 +645,6 @@ export function handleSetupResult(
       }`
     )
   }
-  // 完成组件安装
   finishComponentSetup(instance, isSSR)
 }
 
@@ -674,7 +656,6 @@ type CompileFunction = (
 let compile: CompileFunction | undefined
 
 /**
- * 给runtime-dom用来注册编译器的
  * For runtime-dom to register the compiler.
  * Note the exported method uses any to avoid d.ts relying on the compiler types.
  */
@@ -682,16 +663,10 @@ export function registerRuntimeCompiler(_compile: any) {
   compile = _compile
 }
 
-/**
- * 完成组件安装
- * @param instance 组件实例
- * @param isSSR 
- */
 function finishComponentSetup(
   instance: ComponentInternalInstance,
   isSSR: boolean
 ) {
-  // 获取组件类型（vnode.type,options类型
   const Component = instance.type as ComponentOptions
 
   // template / render function normalization
@@ -699,32 +674,26 @@ function finishComponentSetup(
     if (Component.render) {
       instance.render = Component.render as InternalRenderFunction
     }
-    // 没有渲染函数
   } else if (!instance.render) {
     // could be set from setup()
     if (compile && Component.template && !Component.render) {
-      // 开始测量性能
       if (__DEV__) {
         startMeasure(instance, `compile`)
       }
-      // 开始编译,编译出来render function
       Component.render = compile(Component.template, {
         isCustomElement: instance.appContext.config.isCustomElement,
         delimiters: Component.delimiters
       })
-
       if (__DEV__) {
         endMeasure(instance, `compile`)
       }
     }
 
-    // 给组件render属性赋值为render 函数
     instance.render = (Component.render || NOOP) as InternalRenderFunction
 
     // for runtime-compiled render functions using `with` blocks, the render
     // proxy used needs a different `has` handler which is more performant and
     // also only allows a whitelist of globals to fallthrough.
-    // 还只允许全局白名单
     if (instance.render._rc) {
       instance.withProxy = new Proxy(
         instance.ctx,
@@ -778,21 +747,21 @@ const attrHandlers: ProxyHandler<Data> = {
   }
 }
 
-/**
- * 创建setup上下文对象
- * @param instance 组件实例
- */
 function createSetupContext(instance: ComponentInternalInstance): SetupContext {
+  const expose: SetupContext['expose'] = exposed => {
+    if (__DEV__ && instance.exposed) {
+      warn(`expose() should be called only once per setup().`)
+    }
+    instance.exposed = proxyRefs(exposed)
+  }
+
   if (__DEV__) {
     // We use getters in dev in case libs like test-utils overwrite instance
     // properties (overwrites should not be done in prod)
-    /**
-     * 创建一个冻结对象
-     * 1. attrs属性返回的是代理组件实例attrs的代理对象
-     * 2. slots
-     * 3. emit
-     */
     return Object.freeze({
+      get props() {
+        return instance.props
+      },
       get attrs() {
         return new Proxy(instance.attrs, attrHandlers)
       },
@@ -801,15 +770,16 @@ function createSetupContext(instance: ComponentInternalInstance): SetupContext {
       },
       get emit() {
         return (event: string, ...args: any[]) => instance.emit(event, ...args)
-      }
+      },
+      expose
     })
   } else {
-    // 三个对象的属性（插槽，调用订阅函数，不是响应式对象
-    // 因为setup执行的时候，created没有执行，所以组件实例上，只能有这些
     return {
+      props: instance.props,
       attrs: instance.attrs,
       slots: instance.slots,
-      emit: instance.emit
+      emit: instance.emit,
+      expose
     }
   }
 }
@@ -859,4 +829,8 @@ export function formatComponentName(
   }
 
   return name ? classify(name) : isRoot ? `App` : `Anonymous`
+}
+
+export function isClassComponent(value: unknown): value is ClassComponent {
+  return isFunction(value) && '__vccOpts' in value
 }

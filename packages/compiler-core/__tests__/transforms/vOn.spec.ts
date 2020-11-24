@@ -1,14 +1,14 @@
 import {
   baseParse as parse,
-  transform,
-  ElementNode,
-  ObjectExpression,
   CompilerOptions,
+  ElementNode,
   ErrorCodes,
-  NodeTypes,
-  VNodeCall,
+  TO_HANDLER_KEY,
   helperNameMap,
-  CAPITALIZE
+  NodeTypes,
+  ObjectExpression,
+  transform,
+  VNodeCall
 } from '../../src'
 import { transformOn } from '../../src/transforms/vOn'
 import { transformElement } from '../../src/transforms/transformElement'
@@ -76,7 +76,7 @@ describe('compiler: transform v-on', () => {
           key: {
             type: NodeTypes.COMPOUND_EXPRESSION,
             children: [
-              `"on" + _${helperNameMap[CAPITALIZE]}(`,
+              `_${helperNameMap[TO_HANDLER_KEY]}(`,
               { content: `event` },
               `)`
             ]
@@ -101,7 +101,7 @@ describe('compiler: transform v-on', () => {
           key: {
             type: NodeTypes.COMPOUND_EXPRESSION,
             children: [
-              `"on" + _${helperNameMap[CAPITALIZE]}(`,
+              `_${helperNameMap[TO_HANDLER_KEY]}(`,
               { content: `_ctx.event` },
               `)`
             ]
@@ -126,7 +126,7 @@ describe('compiler: transform v-on', () => {
           key: {
             type: NodeTypes.COMPOUND_EXPRESSION,
             children: [
-              `"on" + _${helperNameMap[CAPITALIZE]}(`,
+              `_${helperNameMap[TO_HANDLER_KEY]}(`,
               { content: `_ctx.event` },
               `(`,
               { content: `_ctx.foo` },
@@ -404,6 +404,22 @@ describe('compiler: transform v-on', () => {
     const onError = jest.fn()
     parseWithVOn(`<div v-on:click.prevent />`, { onError })
     expect(onError).not.toHaveBeenCalled()
+  })
+
+  test('case conversion for kebab-case events', () => {
+    const { node } = parseWithVOn(`<div v-on:foo-bar="onMount"/>`)
+    expect((node.codegenNode as VNodeCall).props).toMatchObject({
+      properties: [
+        {
+          key: {
+            content: `onFooBar`
+          },
+          value: {
+            content: `onMount`
+          }
+        }
+      ]
+    })
   })
 
   test('case conversion for vnode hooks', () => {

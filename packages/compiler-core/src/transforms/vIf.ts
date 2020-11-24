@@ -20,7 +20,9 @@ import {
   IfNode,
   createVNodeCall,
   AttributeNode,
-  locStub
+  locStub,
+  CacheExpression,
+  ConstantTypes
 } from '../ast'
 import { createCompilerError, ErrorCodes } from '../errors'
 import { processExpression } from './transformExpression'
@@ -29,8 +31,7 @@ import {
   CREATE_BLOCK,
   FRAGMENT,
   CREATE_COMMENT,
-  OPEN_BLOCK,
-  TELEPORT
+  OPEN_BLOCK
 } from '../runtimeHelpers'
 import { injectProp, findDir, findProp } from '../utils'
 import { PatchFlags, PatchFlagNames } from '@vue/shared'
@@ -63,13 +64,7 @@ export const transformIf = createStructuralDirectiveTransform(
           ) as IfConditionalExpression
         } else {
           // attach this branch's codegen node to the v-if root.
-          let parentCondition = ifNode.codegenNode!
-          while (
-            parentCondition.alternate.type ===
-            NodeTypes.JS_CONDITIONAL_EXPRESSION
-          ) {
-            parentCondition = parentCondition.alternate
-          }
+          const parentCondition = getParentCondition(ifNode.codegenNode!)
           parentCondition.alternate = createCodegenNodeForBranch(
             branch,
             key + ifNode.branches.length - 1,
@@ -136,6 +131,16 @@ export function processIf(
         comments.unshift(sibling)
         continue
       }
+
+      if (
+        sibling &&
+        sibling.type === NodeTypes.TEXT &&
+        !sibling.content.trim().length
+      ) {
+        context.removeNode(sibling)
+        continue
+      }
+
       if (sibling && sibling.type === NodeTypes.IF) {
         // move the node to the if node's branches
         context.removeNode()
@@ -223,7 +228,12 @@ function createChildrenCodegenNode(
   const { helper } = context
   const keyProperty = createObjectProperty(
     `key`,
-    createSimpleExpression(`${keyIndex}`, false, locStub, true)
+    createSimpleExpression(
+      `${keyIndex}`,
+      false,
+      locStub,
+      ConstantTypes.CAN_HOIST
+    )
   )
   const { children } = branch
   const firstChild = children[0]
@@ -255,14 +265,7 @@ function createChildrenCodegenNode(
     const vnodeCall = (firstChild as ElementNode)
       .codegenNode as BlockCodegenNode
     // Change createVNode to createBlock.
-    if (
-      vnodeCall.type === NodeTypes.VNODE_CALL &&
-      // component vnodes are always tracked and its children are
-      // compiled into slots so no need to make it a block
-      ((firstChild as ElementNode).tagType !== ElementTypes.COMPONENT ||
-        // teleport has component type but isn't always tracked
-        vnodeCall.tag === TELEPORT)
-    ) {
+    if (vnodeCall.type === NodeTypes.VNODE_CALL) {
       vnodeCall.isBlock = true
       helper(OPEN_BLOCK)
       helper(CREATE_BLOCK)
@@ -300,4 +303,20 @@ function isSameKey(
     }
   }
   return true
+}
+
+function getParentCondition(
+  node: IfConditionalExpression | CacheExpression
+): IfConditionalExpression {
+  while (true) {
+    if (node.type === NodeTypes.JS_CONDITIONAL_EXPRESSION) {
+      if (node.alternate.type === NodeTypes.JS_CONDITIONAL_EXPRESSION) {
+        node = node.alternate
+      } else {
+        return node
+      }
+    } else if (node.type === NodeTypes.JS_CACHE_EXPRESSION) {
+      node = node.value as IfConditionalExpression
+    }
+  }
 }
