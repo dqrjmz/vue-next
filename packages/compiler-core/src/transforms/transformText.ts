@@ -82,10 +82,11 @@ export const transformText: NodeTransform = (node, context) => {
           // mark dynamic text with flag so it gets patched inside a block
           if (
             !context.ssr &&
-            getConstantType(child) === ConstantTypes.NOT_CONSTANT
+            getConstantType(child, context) === ConstantTypes.NOT_CONSTANT
           ) {
             callArgs.push(
-              `${PatchFlags.TEXT} /* ${PatchFlagNames[PatchFlags.TEXT]} */`
+              PatchFlags.TEXT +
+                (__DEV__ ? ` /* ${PatchFlagNames[PatchFlags.TEXT]} */` : ``)
             )
           }
           children[i] = {

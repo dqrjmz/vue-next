@@ -16,6 +16,7 @@ import { transformSlotOutlet } from '../../src/transforms/transformSlotOutlet'
 function parseWithSlots(template: string, options: CompilerOptions = {}) {
   const ast = parse(template)
   transform(ast, {
+    slotted: false,
     nodeTransforms: [
       ...(options.prefixIdentifiers ? [transformExpression] : []),
       transformSlotOutlet,
@@ -95,7 +96,9 @@ describe('compiler: transform <slot> outlets', () => {
   })
 
   test('default slot outlet with props', () => {
-    const ast = parseWithSlots(`<slot foo="bar" :baz="qux" />`)
+    const ast = parseWithSlots(
+      `<slot foo="bar" :baz="qux" :foo-bar="foo-bar" />`
+    )
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
       type: NodeTypes.JS_CALL_EXPRESSION,
       callee: RENDER_SLOT,
@@ -122,6 +125,16 @@ describe('compiler: transform <slot> outlets', () => {
               },
               value: {
                 content: `qux`,
+                isStatic: false
+              }
+            },
+            {
+              key: {
+                content: `fooBar`,
+                isStatic: true
+              },
+              value: {
+                content: `foo-bar`,
                 isStatic: false
               }
             }
@@ -324,6 +337,15 @@ describe('compiler: transform <slot> outlets', () => {
           ]
         }
       ]
+    })
+  })
+
+  test('slot with slotted: true', async () => {
+    const ast = parseWithSlots(`<slot/>`, { slotted: true })
+    expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
+      type: NodeTypes.JS_CALL_EXPRESSION,
+      callee: RENDER_SLOT,
+      arguments: [`$slots`, `"default"`, `{}`, `undefined`, `true`]
     })
   })
 

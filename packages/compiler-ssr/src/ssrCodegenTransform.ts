@@ -56,10 +56,10 @@ export function ssrCodegenTransform(ast: RootNode, options: CompilerOptions) {
 
   // Finalize helpers.
   // We need to separate helpers imported from 'vue' vs. '@vue/server-renderer'
-  ast.ssrHelpers = [
-    ...ast.helpers.filter(h => h in ssrHelpers),
-    ...context.helpers
-  ]
+  ast.ssrHelpers = Array.from(
+    new Set([...ast.helpers.filter(h => h in ssrHelpers), ...context.helpers])
+  )
+
   ast.helpers = ast.helpers.filter(h => !(h in ssrHelpers))
 }
 
@@ -128,7 +128,8 @@ function createChildContext(
 export function processChildren(
   children: TemplateChildNode[],
   context: SSRTransformContext,
-  asFragment = false
+  asFragment = false,
+  disableNestedFragments = false
 ) {
   if (asFragment) {
     context.pushStringPart(`<!--[-->`)
@@ -176,10 +177,10 @@ export function processChildren(
         )
         break
       case NodeTypes.IF:
-        ssrProcessIf(child, context)
+        ssrProcessIf(child, context, disableNestedFragments)
         break
       case NodeTypes.FOR:
-        ssrProcessFor(child, context)
+        ssrProcessFor(child, context, disableNestedFragments)
         break
       case NodeTypes.IF_BRANCH:
         // no-op - handled by ssrProcessIf

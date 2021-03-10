@@ -243,7 +243,10 @@ function createReplacePlugin(
       replacements[key] = process.env[key]
     }
   })
-  return replace(replacements)
+  return replace({
+    values: replacements,
+    preventAssignment: true
+  })
 }
 
 function createProductionConfig(format) {
@@ -267,7 +270,8 @@ function createMinifiedConfig(format) {
         compress: {
           ecma: 2015,
           pure_getters: true
-        }
+        },
+        safari10: true
       })
     ]
   )

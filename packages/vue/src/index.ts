@@ -7,7 +7,9 @@ import * as runtimeDom from '@vue/runtime-dom'
 import { isString, NOOP, generateCodeFrame, extend } from '@vue/shared'
 import { InternalRenderFunction } from 'packages/runtime-core/src/component'
 
-__DEV__ && initDev()
+if (__DEV__) {
+  initDev()
+}
 
 const compileCache: Record<string, RenderFunction> = Object.create(null)
 
@@ -56,11 +58,11 @@ function compileToFunction(
     extend(
       {
         hoistStatic: true,
-    // 模板编译错误回调
+        // 模板编译错误回调
         onError(err: CompilerError) {
-      // 开发中...
+          // 开发中...
           if (__DEV__) {
-        //  提示信息
+            //  提示信息
             const message = `Template compilation error: ${err.message}`
             const codeFrame =
               err.loc &&

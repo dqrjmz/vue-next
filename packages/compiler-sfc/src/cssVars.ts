@@ -8,9 +8,7 @@ import {
   BindingMetadata
 } from '@vue/compiler-dom'
 import { SFCDescriptor } from './parse'
-import { rewriteDefault } from './rewriteDefault'
-import { ParserPlugin } from '@babel/parser'
-import postcss, { Root } from 'postcss'
+import { PluginCreator } from 'postcss'
 import hash from 'hash-sum'
 
 export const CSS_VARS_HELPER = `useCssVars`
@@ -51,20 +49,21 @@ export interface CssVarsPluginOptions {
   isProd: boolean
 }
 
-export const cssVarsPlugin = postcss.plugin<CssVarsPluginOptions>(
-  'vue-scoped',
-  opts => (root: Root) => {
-    const { id, isProd } = opts!
-    root.walkDecls(decl => {
+export const cssVarsPlugin: PluginCreator<CssVarsPluginOptions> = opts => {
+  const { id, isProd } = opts!
+  return {
+    postcssPlugin: 'vue-sfc-vars',
+    Declaration(decl) {
       // rewrite CSS variables
       if (cssVarRE.test(decl.value)) {
         decl.value = decl.value.replace(cssVarRE, (_, $1, $2, $3) => {
           return `var(--${genVarName(id, $1 || $2 || $3, isProd)})`
         })
       }
-    })
+    }
   }
-)
+}
+cssVarsPlugin.postcss = true
 
 export function genCssVarsCode(
   vars: string[],
@@ -96,22 +95,13 @@ export function genCssVarsCode(
 
 // <script setup> already gets the calls injected as part of the transform
 // this is only for single normal <script>
-export function injectCssVarsCalls(
-  sfc: SFCDescriptor,
+export function genNormalScriptCssVarsCode(
   cssVars: string[],
   bindings: BindingMetadata,
   id: string,
-  isProd: boolean,
-  parserPlugins: ParserPlugin[]
+  isProd: boolean
 ): string {
-  const script = rewriteDefault(
-    sfc.script!.content,
-    `__default__`,
-    parserPlugins
-  )
-
   return (
-    script +
     `\nimport { ${CSS_VARS_HELPER} as _${CSS_VARS_HELPER} } from 'vue'\n` +
     `const __injectCSSVars__ = () => {\n${genCssVarsCode(
       cssVars,
@@ -122,7 +112,6 @@ export function injectCssVarsCalls(
     `const __setup__ = __default__.setup\n` +
     `__default__.setup = __setup__\n` +
     `  ? (props, ctx) => { __injectCSSVars__();return __setup__(props, ctx) }\n` +
-    `  : __injectCSSVars__\n` +
-    `export default __default__`
+    `  : __injectCSSVars__\n`
   )
 }

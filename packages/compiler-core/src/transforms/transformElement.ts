@@ -29,8 +29,7 @@ import {
   isObject,
   isReservedProp,
   capitalize,
-  camelize,
-  EMPTY_OBJ
+  camelize
 } from '@vue/shared'
 import { createCompilerError, ErrorCodes } from '../errors'
 import {
@@ -169,7 +168,7 @@ export const transformElement: NodeTransform = (node, context) => {
           type === NodeTypes.COMPOUND_EXPRESSION
         if (
           hasDynamicTextChild &&
-          getConstantType(child) === ConstantTypes.NOT_CONSTANT
+          getConstantType(child, context) === ConstantTypes.NOT_CONSTANT
         ) {
           patchFlag |= PatchFlags.TEXT
         }
@@ -255,41 +254,68 @@ export function resolveComponentType(
   }
 
   // 3. user component (from setup bindings)
-  const bindings = context.bindingMetadata
-  if (bindings !== EMPTY_OBJ) {
-    const checkType = (type: BindingTypes) => {
-      let resolvedTag = tag
-      if (
-        bindings[resolvedTag] === type ||
-        bindings[(resolvedTag = camelize(tag))] === type ||
-        bindings[(resolvedTag = capitalize(camelize(tag)))] === type
-      ) {
-        return resolvedTag
-      }
-    }
-    const tagFromConst = checkType(BindingTypes.SETUP_CONST)
-    if (tagFromConst) {
-      return context.inline
-        ? // in inline mode, const setup bindings (e.g. imports) can be used as-is
-          tagFromConst
-        : `$setup[${JSON.stringify(tagFromConst)}]`
-    }
-    const tagFromSetup =
-      checkType(BindingTypes.SETUP_LET) ||
-      checkType(BindingTypes.SETUP_REF) ||
-      checkType(BindingTypes.SETUP_MAYBE_REF)
-    if (tagFromSetup) {
-      return context.inline
-        ? // setup scope bindings that may be refs need to be unrefed
-          `${context.helperString(UNREF)}(${tagFromSetup})`
-        : `$setup[${JSON.stringify(tagFromSetup)}]`
+  // this is skipped in browser build since browser builds do not perform
+  // binding analysis.
+  if (!__BROWSER__) {
+    const fromSetup = resolveSetupReference(tag, context)
+    if (fromSetup) {
+      return fromSetup
     }
   }
 
-  // 4. user component (resolve)
+  // 4. Self referencing component (inferred from filename)
+  if (!__BROWSER__ && context.selfName) {
+    if (capitalize(camelize(tag)) === context.selfName) {
+      context.helper(RESOLVE_COMPONENT)
+      context.components.add(`_self`)
+      return toValidAssetId(`_self`, `component`)
+    }
+  }
+
+  // 5. user component (resolve)
   context.helper(RESOLVE_COMPONENT)
   context.components.add(tag)
   return toValidAssetId(tag, `component`)
+}
+
+function resolveSetupReference(name: string, context: TransformContext) {
+  const bindings = context.bindingMetadata
+  if (!bindings) {
+    return
+  }
+
+  const camelName = camelize(name)
+  const PascalName = capitalize(camelName)
+  const checkType = (type: BindingTypes) => {
+    if (bindings[name] === type) {
+      return name
+    }
+    if (bindings[camelName] === type) {
+      return camelName
+    }
+    if (bindings[PascalName] === type) {
+      return PascalName
+    }
+  }
+
+  const fromConst = checkType(BindingTypes.SETUP_CONST)
+  if (fromConst) {
+    return context.inline
+      ? // in inline mode, const setup bindings (e.g. imports) can be used as-is
+        fromConst
+      : `$setup[${JSON.stringify(fromConst)}]`
+  }
+
+  const fromMaybeRef =
+    checkType(BindingTypes.SETUP_LET) ||
+    checkType(BindingTypes.SETUP_REF) ||
+    checkType(BindingTypes.SETUP_MAYBE_REF)
+  if (fromMaybeRef) {
+    return context.inline
+      ? // setup scope bindings that may be refs need to be unrefed
+        `${context.helperString(UNREF)}(${fromMaybeRef})`
+      : `$setup[${JSON.stringify(fromMaybeRef)}]`
+  }
 }
 
 export type PropsExpression = ObjectExpression | CallExpression | ExpressionNode
@@ -347,7 +373,7 @@ export function buildProps(
         value.type === NodeTypes.JS_CACHE_EXPRESSION ||
         ((value.type === NodeTypes.SIMPLE_EXPRESSION ||
           value.type === NodeTypes.COMPOUND_EXPRESSION) &&
-          getConstantType(value) > 0)
+          getConstantType(value, context) > 0)
       ) {
         // skip if the prop is a cached handler or has constant value
         return
@@ -590,12 +616,20 @@ function buildDirectiveArgs(
   const dirArgs: ArrayExpression['elements'] = []
   const runtime = directiveImportMap.get(dir)
   if (runtime) {
+    // built-in directive with runtime
     dirArgs.push(context.helperString(runtime))
   } else {
-    // inject statement for resolving directive
-    context.helper(RESOLVE_DIRECTIVE)
-    context.directives.add(dir.name)
-    dirArgs.push(toValidAssetId(dir.name, `directive`))
+    // user directive.
+    // see if we have directives exposed via <script setup>
+    const fromSetup = !__BROWSER__ && resolveSetupReference(dir.name, context)
+    if (fromSetup) {
+      dirArgs.push(fromSetup)
+    } else {
+      // inject statement for resolving directive
+      context.helper(RESOLVE_DIRECTIVE)
+      context.directives.add(dir.name)
+      dirArgs.push(toValidAssetId(dir.name, `directive`))
+    }
   }
   const { loc } = dir
   if (dir.exp) dirArgs.push(dir.exp)

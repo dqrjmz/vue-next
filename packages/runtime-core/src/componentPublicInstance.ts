@@ -1,4 +1,8 @@
-import { ComponentInternalInstance, Data } from './component'
+import {
+  ComponentInternalInstance,
+  Data,
+  isStatefulComponent
+} from './component'
 import { nextTick, queueJob } from './scheduler'
 import { instanceWatch, WatchOptions, WatchStopHandle } from './apiWatch'
 import {
@@ -31,10 +35,8 @@ import {
 } from './componentOptions'
 import { EmitsOptions, EmitFn } from './componentEmits'
 import { Slots } from './componentSlots'
-import {
-  currentRenderingInstance,
-  markAttrsAccessed
-} from './componentRenderUtils'
+import { markAttrsAccessed } from './componentRenderUtils'
+import { currentRenderingInstance } from './componentRenderContext'
 import { warn } from './warning'
 import { UnionToIntersection } from './helpers/typeUtils'
 
@@ -200,7 +202,19 @@ export type ComponentPublicInstance<
 
 type PublicPropertiesMap = Record<string, (i: ComponentInternalInstance) => any>
 
-// 公开属性映射
+/**
+ * #2437 In Vue 3, functional components do not have a public instance proxy but
+ * they exist in the internal parent chain. For code that relies on traversing
+ * public $parent chains, skip functional ones and go to the parent instead.
+ */
+const getPublicInstance = (
+  i: ComponentInternalInstance | null
+): ComponentPublicInstance | ComponentInternalInstance['exposed'] | null => {
+  if (!i) return null
+  if (isStatefulComponent(i)) return i.exposed ? i.exposed : i.proxy
+  return getPublicInstance(i.parent)
+}
+
 const publicPropertiesMap: PublicPropertiesMap = extend(Object.create(null), {
   $: i => i,
   $el: i => i.vnode.el,
@@ -209,8 +223,8 @@ const publicPropertiesMap: PublicPropertiesMap = extend(Object.create(null), {
   $attrs: i => (__DEV__ ? shallowReadonly(i.attrs) : i.attrs),
   $slots: i => (__DEV__ ? shallowReadonly(i.slots) : i.slots),
   $refs: i => (__DEV__ ? shallowReadonly(i.refs) : i.refs),
-  $parent: i => i.parent && i.parent.proxy,
-  $root: i => i.root && i.root.proxy,
+  $parent: i => getPublicInstance(i.parent),
+  $root: i => getPublicInstance(i.root),
   $emit: i => i.emit,
   $options: i => (__FEATURE_OPTIONS_API__ ? resolveMergedOptions(i) : i.type),
   $forceUpdate: i => () => queueJob(i.update),
@@ -231,9 +245,6 @@ export interface ComponentRenderContext {
   _: ComponentInternalInstance
 }
 
-/**
- * 公共实例代理处理器
- */
 export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
   get({ _: instance }: ComponentRenderContext, key: string) {
     const {
@@ -246,7 +257,6 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
       appContext
     } = instance
 
-    // 让@vue/reactivity知道它，应该从不检测vue公共实例
     // let @vue/reactivity know it should never observe Vue public instances.
     if (key === ReactiveFlags.SKIP) {
       return true
@@ -264,7 +274,6 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
     // access on a plain object, so we use an accessCache object (with null
     // prototype) to memoize what access type a key corresponds to.
     let normalizedProps
-    // 如果key的第一个字符不是 `$`
     if (key[0] !== '$') {
       const n = accessCache![key]
       if (n !== undefined) {
@@ -301,7 +310,6 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
       }
     }
 
-    // 公开属性映射
     const publicGetter = publicPropertiesMap[key]
     let cssModule, globalProperties
     // public $xxx properties
@@ -346,7 +354,7 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
           )} must be accessed via $data because it starts with a reserved ` +
             `character ("$" or "_") and is not proxied on the render context.`
         )
-      } else {
+      } else if (instance === currentRenderingInstance) {
         warn(
           `Property ${JSON.stringify(key)} was accessed during render ` +
             `but is not defined on instance.`
@@ -365,7 +373,7 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
       setupState[key] = value
     } else if (data !== EMPTY_OBJ && hasOwn(data, key)) {
       data[key] = value
-    } else if (key in instance.props) {
+    } else if (hasOwn(instance.props, key)) {
       __DEV__ &&
         warn(
           `Attempting to mutate prop "${key}". Props are readonly.`,

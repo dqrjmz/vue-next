@@ -20,8 +20,12 @@ export interface Ref<T = any> {
   _shallow?: boolean
 }
 
-export type ToRef<T> = T extends Ref ? T : Ref<UnwrapRef<T>>
-export type ToRefs<T = any> = { [K in keyof T]: ToRef<T[K]> }
+export type ToRef<T> = [T] extends [Ref] ? T : Ref<UnwrapRef<T>>
+export type ToRefs<T = any> = {
+  // #2687: somehow using ToRef<T[K]> here turns the resulting type into
+  // a union of multiple Ref<*> types instead of a single Ref<* | *> type.
+  [K in keyof T]: T[K] extends Ref ? T[K] : Ref<UnwrapRef<T[K]>>
+}
 
 const convert = <T extends unknown>(val: T): T =>
   isObject(val) ? reactive(val) : val
@@ -29,7 +33,7 @@ const convert = <T extends unknown>(val: T): T =>
 export function isRef<T>(r: Ref<T> | unknown): r is Ref<T>
 /**
  * 当前对象是否为ref对象
- * @param r 
+ * @param r
  */
 export function isRef(r: any): r is Ref {
   return Boolean(r && r.__v_isRef === true)
@@ -58,7 +62,7 @@ export function shallowRef<T>(value: T): Ref<T>
 export function shallowRef<T = any>(): Ref<T | undefined>
 /**
  * 浅引用
- * @param value 
+ * @param value
  */
 export function shallowRef(value?: unknown) {
   return createRef(value, true)
@@ -162,7 +166,7 @@ export function customRef<T>(factory: CustomRefFactory<T>): Ref<T> {
 }
 
 export function toRefs<T extends object>(object: T): ToRefs<T> {
- /* 将对象进行ref化
+  /* 将对象进行ref化
  * @param object 
  */
   if (__DEV__ && !isProxy(object)) {

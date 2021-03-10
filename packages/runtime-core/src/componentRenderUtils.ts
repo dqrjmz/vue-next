@@ -9,7 +9,6 @@ import {
   createVNode,
   Comment,
   cloneVNode,
-  Fragment,
   VNodeArrayChildren,
   isVNode
 } from './vnode'
@@ -19,35 +18,19 @@ import { warn } from './warning'
 import { isHmrUpdating } from './hmr'
 import { NormalizedProps } from './componentProps'
 import { isEmitListener } from './componentEmits'
-
-// 标记当前渲染实例给资产分辨率，在渲染期间
-// mark the current rendering instance for asset resolution (e.g.
-// resolveComponent, resolveDirective) during render
-export let currentRenderingInstance: ComponentInternalInstance | null = null
+import { setCurrentRenderingInstance } from './componentRenderContext'
 
 /**
- * 设置当前正在渲染的组件实例
- * @param instance 组件实例
+ * dev only flag to track whether $attrs was used during render.
+ * If $attrs was used during render then the warning for failed attrs
+ * fallthrough can be suppressed.
  */
-export function setCurrentRenderingInstance(
-  instance: ComponentInternalInstance | null
-) {
-  currentRenderingInstance = instance
-}
-
-// dev only flag to track whether $attrs was used during render.
-// If $attrs was used during render then the warning for failed attrs
-// fallthrough can be suppressed.
 let accessedAttrs: boolean = false
 
 export function markAttrsAccessed() {
   accessedAttrs = true
 }
 
-/**
- * 渲染根组件
- * @param instance 
- */
 export function renderComponentRoot(
   instance: ComponentInternalInstance
 ): VNode {
@@ -61,7 +44,6 @@ export function renderComponentRoot(
     slots,
     attrs,
     emit,
-    // 获取组件的渲染函数
     render,
     renderCache,
     data,
@@ -70,19 +52,16 @@ export function renderComponentRoot(
   } = instance
 
   let result
-  // 组件实例
-  currentRenderingInstance = instance
+  setCurrentRenderingInstance(instance)
   if (__DEV__) {
     accessedAttrs = false
   }
   try {
     let fallthroughAttrs
-    // 有状态组件
     if (vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
       // withProxy is a proxy with a different `has` trap only for
       // runtime-compiled render functions using `with` block.
       const proxyToUse = withProxy || proxy
-      // 调用组件的渲染函数,返回组件的vnode,并将组件的vnode进行规范化处理
       result = normalizeVNode(
         render!.call(
           proxyToUse,
@@ -96,20 +75,18 @@ export function renderComponentRoot(
       )
       fallthroughAttrs = attrs
     } else {
-      // functional函数是组件,直接就是一个render function
+      // functional
       const render = Component as FunctionalComponent
       // in dev, mark attrs accessed if optional props (attrs === props)
       if (__DEV__ && attrs === props) {
         markAttrsAccessed()
       }
-      // 同样获取组件的vnode并,进行规范化处理
       result = normalizeVNode(
         render.length > 1
           ? render(
               props,
               __DEV__
                 ? {
-                    props,
                     get attrs() {
                       markAttrsAccessed()
                       return attrs
@@ -117,7 +94,7 @@ export function renderComponentRoot(
                     slots,
                     emit
                   }
-                : { props, attrs, slots, emit }
+                : { attrs, slots, emit }
             )
           : render(props, null as any /* we know it doesn't need it */)
       )
@@ -129,10 +106,13 @@ export function renderComponentRoot(
     // attr merging
     // in dev mode, comments are preserved, and it's possible for a template
     // to have comments along side the root element which makes it a fragment
-    // 组件的vnode
     let root = result
     let setRoot: ((root: VNode) => void) | undefined = undefined
-    if (__DEV__) {
+    if (
+      __DEV__ &&
+      result.patchFlag > 0 &&
+      result.patchFlag & PatchFlags.DEV_ROOT_FRAGMENT
+    ) {
       ;[root, setRoot] = getChildRoot(result)
     }
 
@@ -224,8 +204,8 @@ export function renderComponentRoot(
     handleError(err, instance, ErrorCodes.RENDER_FUNCTION)
     result = createVNode(Comment)
   }
-  currentRenderingInstance = null
 
+  setCurrentRenderingInstance(null)
   return result
 }
 
@@ -238,9 +218,6 @@ export function renderComponentRoot(
 const getChildRoot = (
   vnode: VNode
 ): [VNode, ((root: VNode) => void) | undefined] => {
-  if (vnode.type !== Fragment) {
-    return [vnode, undefined]
-  }
   const rawChildren = vnode.children as VNodeArrayChildren
   const dynamicChildren = vnode.dynamicChildren
   const childRoot = filterSingleRoot(rawChildren)
@@ -262,18 +239,27 @@ const getChildRoot = (
   return [normalizeVNode(childRoot), setRoot]
 }
 
-/**
- * dev only
- */
-export function filterSingleRoot(children: VNodeArrayChildren): VNode | null {
-  const filtered = children.filter(child => {
-    return !(
-      isVNode(child) &&
-      child.type === Comment &&
-      child.children !== 'v-if'
-    )
-  })
-  return filtered.length === 1 && isVNode(filtered[0]) ? filtered[0] : null
+export function filterSingleRoot(
+  children: VNodeArrayChildren
+): VNode | undefined {
+  let singleRoot
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i]
+    if (isVNode(child)) {
+      // ignore user comment
+      if (child.type !== Comment || child.children === 'v-if') {
+        if (singleRoot) {
+          // has more than 1 non-comment child, return now
+          return
+        } else {
+          singleRoot = child
+        }
+      }
+    } else {
+      return
+    }
+  }
+  return singleRoot
 }
 
 const getFunctionalFallthrough = (attrs: Data): Data | undefined => {
@@ -304,12 +290,6 @@ const isElementRoot = (vnode: VNode) => {
   )
 }
 
-/**
- * 应该更新组件
- * @param prevVNode 前一个vnode
- * @param nextVNode 后一个vnode
- * @param optimized 是否优化
- */
 export function shouldUpdateComponent(
   prevVNode: VNode,
   nextVNode: VNode,
